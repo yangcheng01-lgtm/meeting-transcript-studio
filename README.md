@@ -35,6 +35,25 @@ python app.py
 
 打开：`http://127.0.0.1:8765/`
 
+## 本地材料存储位置
+
+运行时项目、上传的音频/视频、切片和导出结果可以放在源代码目录之外，避免占满 C 盘：
+
+```powershell
+$env:MEETING_DATA_ROOT = "D:\多听工作台"
+$env:MEETING_PROJECTS_DIR = "D:\多听工作台\data\projects"
+```
+
+`start_studio.ps1` 会在检测到 `D:\多听工作台\data\projects` 后自动使用该目录；未迁移时会回退到仓库内的 `data\projects`。模型缓存也会优先使用 `D:\多听工作台\model-cache`。
+
+首次迁移现有本地项目和材料时，在停止工作台后执行：
+
+```powershell
+python scripts\migrate_storage.py
+```
+
+迁移脚本会更新项目中的绝对媒体路径，并在 D 盘写入 `migration_manifest.json`。
+
 ## 模型设置
 
 会议纪要模型在页面“模型设置”中配置：

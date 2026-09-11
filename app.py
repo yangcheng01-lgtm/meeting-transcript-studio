@@ -7,7 +7,7 @@
 - 人工给匿名 SPEAKER 标签命名为姓名/角色；
 - 将时间戳 ASR 与 speaker timeline 对齐并导出 Markdown/TXT/SRT。
 
-所有项目文件都保存在本机 data/projects；浏览器服务只绑定 127.0.0.1。
+所有项目文件都保存在本机配置的数据目录；浏览器服务只绑定 127.0.0.1。
 """
 from __future__ import annotations
 
@@ -31,7 +31,10 @@ from werkzeug.utils import secure_filename
 
 APP_DIR = Path(__file__).resolve().parent
 WORKSPACE = Path(os.environ.get("MEETING_WORKSPACE", APP_DIR.parent))
-PROJECTS_DIR = APP_DIR / "data" / "projects"
+DATA_ROOT = Path(os.environ.get("MEETING_DATA_ROOT", str(APP_DIR))).expanduser()
+PROJECTS_DIR = Path(
+    os.environ.get("MEETING_PROJECTS_DIR", str(DATA_ROOT / "data" / "projects"))
+).expanduser()
 PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 FFMPEG = Path(os.environ.get("FFMPEG_PATH", r"D:\Program Files\JianyingPro\11.0.0.14274\ffmpeg.exe"))
 VOICEID_PYTHON = Path(os.environ.get("VOICEID_PYTHON", sys.executable))
