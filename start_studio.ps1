@@ -1,0 +1,15 @@
+param(
+    [string]$Token
+)
+
+# Safe local startup: token exists only in this process and is never written to disk.
+if ([string]::IsNullOrWhiteSpace($Token) -and [string]::IsNullOrWhiteSpace($env:HF_TOKEN)) {
+    $secure = Read-Host '粘贴 Hugging Face read token（输入不会回显）' -AsSecureString
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try { $env:HF_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+}
+if ([string]::IsNullOrWhiteSpace($env:HF_TOKEN) -and -not [string]::IsNullOrWhiteSpace($Token)) { $env:HF_TOKEN = $Token }
+
+$python = if ($env:VOICEID_PYTHON) { $env:VOICEID_PYTHON } elseif (Test-Path "$PSScriptRoot\.venv\Scripts\python.exe") { "$PSScriptRoot\.venv\Scripts\python.exe" } else { "python" }
+& $python "$PSScriptRoot\app.py"

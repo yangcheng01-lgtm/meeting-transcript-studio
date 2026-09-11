@@ -1,0 +1,6 @@
+{
+  "api_url": "https://ai-service.segway-ninebot.com/v1/audio/transcriptions",
+  "api_key": "",
+  "model": "qwen3-asr",
+  "language": "zh"
+}

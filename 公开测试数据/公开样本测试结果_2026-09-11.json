@@ -1,0 +1,39 @@
+{
+  "tested_at": "2026-09-11T09:56:19+08:00",
+  "results": [
+    {
+      "language": "zh",
+      "project_id": "257bf3c3a6",
+      "title": "PUB-CH-2026-001｜AliMeeting中文会议60秒",
+      "expected_speakers": 4,
+      "speakers": [
+        "SPEAKER_00",
+        "SPEAKER_01",
+        "SPEAKER_02",
+        "SPEAKER_03"
+      ],
+      "diarization_segments": 25,
+      "asr_segments": 18,
+      "transcript_segments": 18,
+      "source": "C:\\Users\\yang.cheng01\\Documents\\语音&视频制作\\公开测试数据\\AliMeeting_R8002_M8002_MS802\\audio_16k_mono_60s.wav",
+      "source_kind": "public research dataset"
+    },
+    {
+      "language": "en",
+      "project_id": "66e30d2961",
+      "title": "PUB-EN-2026-001｜AMI English Meeting 60s",
+      "expected_speakers": 4,
+      "speakers": [
+        "SPEAKER_00",
+        "SPEAKER_01",
+        "SPEAKER_02",
+        "SPEAKER_03"
+      ],
+      "diarization_segments": 7,
+      "asr_segments": 5,
+      "transcript_segments": 5,
+      "source": "C:\\Users\\yang.cheng01\\Documents\\语音&视频制作\\公开测试数据\\AMI_ES2008a_first60s_16k_mono.wav",
+      "source_kind": "public research dataset"
+    }
+  ]
+}

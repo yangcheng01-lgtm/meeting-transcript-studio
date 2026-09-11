@@ -1,0 +1,42 @@
+# Runtime and local data
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.log
+studio_server.*.log
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+config/*.json
+!config/*.example.json
+*token*
+*secret*
+
+# Runtime projects, uploads, generated audio and model data
+data/projects/
+公开测试数据/**/*.{wav,mp3,m4a,mp4,mov,avi,mkv,tar,gz}
+公开测试数据/**/*.tar.gz
+speaker_previews/
+normalized_sources/
+
+# Audio/video and large binary files anywhere in this source repo
+*.wav
+*.mp3
+*.m4a
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.flac
+*.tar.gz
+*.zip
+*.7z
+
+# Local development and patch scratch files
+_*
+null
+*.bak
+.DS_Store
