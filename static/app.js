@@ -1,4 +1,4 @@
-const state = { project: null, jobPoller: null, previewAudio: null };
+const state = { project: null, jobPoller: null, previewAudio: null, summarySkills: [] };
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
 
@@ -76,6 +76,8 @@ function renderProject() {
   $("#generateMinutesBtn").disabled = !hasTranscript || Boolean(missingNames.length);
   $("#generateMinutesAdvancedBtn").disabled = !hasTranscript || Boolean(missingNames.length);
   $("#referenceText").textContent = p.reference_text || p.asr_raw_text || "尚未导入纯文字稿。";
+  if ($("#glossaryInput")) $("#glossaryInput").value = (p.glossary || []).join("\n");
+  if (p.latest_report_skill && $("#summarySkillSelect")) $("#summarySkillSelect").value = p.latest_report_skill;
   $("#transcriptFold").open = false;
   renderSpeakers(); renderTimeline(); renderTranscript();
 }
@@ -176,7 +178,11 @@ async function loadModelSettings() {
   try {
     const config = await api("/api/llm/config");
     $("#llmApiUrlInput").value = config.api_url || "https://ai-service.segway-ninebot.com";
-    $("#llmModelInput").value = config.model || "";
+    const model = config.model || "";
+    const select = $("#llmModelSelect");
+    const hasOption = [...select.options].some((option) => option.value === model);
+    select.value = hasOption ? model : "";
+    $("#llmModelInput").value = hasOption ? "" : model;
     $("#settingsBtn").textContent = config.configured ? `模型设置 · ${config.model || "已配置"}` : "模型设置";
   } catch (_) {}
 }
@@ -205,15 +211,36 @@ async function saveModelSettings() {
   toast(`模型配置已保存：${result.model}（仅当前工作台进程）`);
 }
 
-async function generateMinutes() {
+async function loadSummarySkills() {
+  try {
+    const result = await api("/api/summary-skills");
+    state.summarySkills = result.skills || [];
+    const select = $("#summarySkillSelect");
+    select.innerHTML = state.summarySkills.map((skill) => `<option value="${escapeHtml(skill.id)}">${escapeHtml(skill.title)}</option>`).join("");
+    select.value = state.project?.latest_report_skill || result.default || "meeting-minutes-synthesis-zh";
+  } catch (error) { toast(error.message, true); }
+}
+
+async function generateReport() {
   try {
     const missing = unresolvedSpeakers(state.project);
-    if (!state.project?.transcript_segments?.length) throw new Error("请先完成识别，再生成会议纪要。");
+    if (!state.project?.transcript_segments?.length) throw new Error("请先完成识别，再生成总结报告。");
     if (missing.length) throw new Error(`请先填写以下 Speaker 的姓名或角色：${missing.join("、")}`);
-    const result = await api(`/api/projects/${state.project.id}/generate-minutes`, {method:"POST"});
-    toast(`会议纪要已生成：${result.model}`);
+    const skill = $("#summarySkillSelect")?.value || "meeting-minutes-synthesis-zh";
+    toast("正在生成总结报告；长逐字稿会自动分段提取后汇总。");
+    const result = await api(`/api/projects/${state.project.id}/generate-report`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({skill})});
+    toast(`${result.title}已生成：${result.model} · ${result.llm_requests} 次模型请求`);
     window.open(result.path, "_blank");
     await refreshProject();
+  } catch (error) { toast(error.message, true); }
+}
+
+async function saveGlossary() {
+  try {
+    const glossary = $("#glossaryInput").value;
+    state.project = await api(`/api/projects/${state.project.id}/glossary`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({glossary})});
+    renderProject();
+    toast(`业务词表已保存：${state.project.glossary?.length || 0} 个术语。`);
   } catch (error) { toast(error.message, true); }
 }
 
@@ -221,19 +248,22 @@ async function createFromPath() {
   const title = $("#titleInput")?.value.trim() || "";
   const youtubeUrl = $("#youtubeUrlInput")?.value.trim() || "";
   const mediaPath = $("#mediaPathInput")?.value.trim() || "";
+  const clipStart = $("#youtubeClipStartInput")?.value.trim() || "0";
+  const clipDuration = $("#youtubeClipDurationInput")?.value.trim() || "";
   const expectedSpeakers = $("#expectedSpeakersInput")?.value.trim() || "";
+  const glossary = $("#projectGlossaryInput")?.value.trim() || "";
   const mediaInput = $("#mediaFileInput");
   const files = mediaInput?.files ? Array.from(mediaInput.files) : [];
   if (!youtubeUrl && !mediaPath && !files.length) throw new Error("请填写 YouTube 链接、本机路径，或选择一个或多个音频/视频文件。")
   let project;
   if (youtubeUrl) {
-    project = await api("/api/projects/youtube", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url: youtubeUrl, title, expected_speakers: expectedSpeakers})});
+    project = await api("/api/projects/youtube", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url: youtubeUrl, title, expected_speakers: expectedSpeakers, glossary, clip_start: clipStart, clip_duration: clipDuration})});
   } else if (files.length) {
-    const form = new FormData(); form.append("title", title); form.append("expected_speakers", expectedSpeakers);
+    const form = new FormData(); form.append("title", title); form.append("expected_speakers", expectedSpeakers); form.append("glossary", glossary);
     files.forEach((file) => form.append("file", file, file.name));
     project = await api("/api/projects/upload", { method: "POST", body: form });
   } else {
-    project = await api("/api/projects", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({title, media_path: mediaPath, expected_speakers: expectedSpeakers, diarization_path: $("#initialDiarInput")?.value.trim() || "", reference_text_path: $("#referenceTextInput")?.value.trim() || ""})});
+    project = await api("/api/projects", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({title, media_path: mediaPath, expected_speakers: expectedSpeakers, glossary, diarization_path: $("#initialDiarInput")?.value.trim() || "", reference_text_path: $("#referenceTextInput")?.value.trim() || ""})});
   }
   state.project = project; renderProject(); $("#projectDialog").close(); toast("本地项目已创建。");
 }
@@ -276,9 +306,12 @@ async function openProjectDialog() {
 }
 $("#settingsBtn").onclick = async () => { await loadModelSettings(); $("#settingsDialog").showModal(); };
 $("#refreshModelsBtn").onclick = () => readModelList().catch((e) => toast(e.message, true));
+$("#llmModelSelect").onchange = () => { if ($("#llmModelSelect").value) $("#llmModelInput").value = ""; };
+$("#llmModelInput").oninput = () => { if ($("#llmModelInput").value.trim()) $("#llmModelSelect").value = ""; };
 $("#saveSettingsBtn").onclick = (event) => { event.preventDefault(); saveModelSettings().catch((e) => toast(e.message, true)); };
-$("#generateMinutesBtn").onclick = generateMinutes;
-$("#generateMinutesAdvancedBtn").onclick = generateMinutes;
+$("#generateMinutesBtn").onclick = generateReport;
+$("#generateMinutesAdvancedBtn").onclick = generateReport;
+$("#saveGlossaryBtn").onclick = saveGlossary;
 $("#newProjectBtn").onclick = openProjectDialog;
 $("#emptyImportBtn").onclick = openProjectDialog;
 $("#loadDemoBtn").onclick = loadDemo; $("#emptyDemoBtn").onclick = loadDemo;
@@ -307,4 +340,5 @@ $("#exportBtn").onclick = exportTranscript;
 $("#simpleExportBtn").onclick = exportTranscript;
 
 loadModelSettings();
+loadSummarySkills();
 api("/api/projects").then((projects)=>{ if(projects.length){ state.project={id:projects[0].id}; refreshProject(); } }).catch(()=>{});

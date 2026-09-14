@@ -20,10 +20,24 @@ if ([string]::IsNullOrWhiteSpace($env:HF_HOME) -and (Test-Path (Join-Path $env:M
 if ([string]::IsNullOrWhiteSpace($env:TORCH_HOME) -and (Test-Path (Join-Path $env:MEETING_DATA_ROOT 'model-cache\torch'))) {
     $env:TORCH_HOME = Join-Path $env:MEETING_DATA_ROOT 'model-cache\torch'
 }
+if ([string]::IsNullOrWhiteSpace($env:PYANNOTE_CACHE) -and (Test-Path (Join-Path $env:MEETING_DATA_ROOT 'model-cache\torch\pyannote'))) {
+    $env:PYANNOTE_CACHE = Join-Path $env:MEETING_DATA_ROOT 'model-cache\torch\pyannote'
+}
 
-# Safe local startup: token exists only in this process and is never written to disk.
-if ([string]::IsNullOrWhiteSpace($Token) -and [string]::IsNullOrWhiteSpace($env:HF_TOKEN)) {
-    $secure = Read-Host '粘贴 Hugging Face read token（输入不会回显）' -AsSecureString
+# Reuse the Windows user proxy for yt-dlp when one is enabled.
+if ([string]::IsNullOrWhiteSpace($env:YTDLP_PROXY)) {
+    $internet = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction SilentlyContinue
+    if ($internet.ProxyEnable -eq 1 -and -not [string]::IsNullOrWhiteSpace($internet.ProxyServer)) {
+        $env:YTDLP_PROXY = if ($internet.ProxyServer -match '^https?://') { $internet.ProxyServer } else { "http://$($internet.ProxyServer)" }
+    }
+}
+
+# Cached pyannote models run offline without asking ordinary users for an HF token.
+$hasOfflineModel = -not [string]::IsNullOrWhiteSpace($env:PYANNOTE_CACHE) -and (Test-Path $env:PYANNOTE_CACHE)
+if ($hasOfflineModel) {
+    $env:HF_HUB_OFFLINE = '1'
+} elseif ([string]::IsNullOrWhiteSpace($Token) -and [string]::IsNullOrWhiteSpace($env:HF_TOKEN)) {
+    $secure = Read-Host '首次下载模型时粘贴 Hugging Face read token（输入不会回显）' -AsSecureString
     $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
     try { $env:HF_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }

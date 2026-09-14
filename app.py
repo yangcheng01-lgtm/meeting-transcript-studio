@@ -41,6 +41,11 @@ VOICEID_PYTHON = Path(os.environ.get("VOICEID_PYTHON", sys.executable))
 DIARIZE_SCRIPT = Path(os.environ.get("DIARIZE_SCRIPT", str(APP_DIR / "scripts" / "diarize.py")))
 ASR_CONFIG = Path(os.environ.get("ASR_CONFIG_PATH", str(APP_DIR / "config" / "asr.json")))
 MINUTES_SKILL = Path(os.environ.get("MINUTES_SKILL_PATH", str(APP_DIR / "skills" / "meeting-minutes-synthesis-zh" / "SKILL.md")))
+SUMMARY_SKILLS_DIR = Path(os.environ.get("SUMMARY_SKILLS_DIR", str(APP_DIR / "skills")))
+DEFAULT_SUMMARY_SKILL = os.environ.get("DEFAULT_SUMMARY_SKILL", "meeting-minutes-synthesis-zh")
+DEFAULT_LLM_MODEL = os.environ.get("DEFAULT_LLM_MODEL", "external/glm-5.3-flash")
+LLM_DIRECT_CHAR_LIMIT = int(os.environ.get("LLM_DIRECT_CHAR_LIMIT", "60000"))
+LLM_CHUNK_CHAR_LIMIT = int(os.environ.get("LLM_CHUNK_CHAR_LIMIT", "22000"))
 MAX_CHUNK_SECONDS = 300
 LOCAL_ASR_MODEL = os.environ.get("LOCAL_ASR_MODEL", "small")
 
@@ -49,7 +54,8 @@ app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB local upload c
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.RLock()
 # LLM configuration is intentionally process-memory only. It is never persisted in projects.
-_llm_config: dict[str, str] = {"api_url": "https://ai-service.segway-ninebot.com", "api_key": "", "model": ""}
+_llm_config: dict[str, str] = {"api_url": "https://ai-service.segway-ninebot.com", "api_key": "", "model": DEFAULT_LLM_MODEL}
+_runtime_asr_config: dict[str, str] = {}
 
 
 def now() -> str:
@@ -71,6 +77,25 @@ def read_json(path: Path) -> Any:
 def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def normalize_glossary(value: Any) -> list[str]:
+    if isinstance(value, str):
+        items = re.split(r"[\r\n,，;；]+", value)
+    elif isinstance(value, list):
+        items = [str(item) for item in value]
+    else:
+        items = []
+    result = []
+    for item in items:
+        term = str(item).strip()
+        if term and term not in result:
+            result.append(term[:120])
+    return result[:200]
+
+
+def glossary_prompt(project: dict[str, Any]) -> str:
+    return "、".join(normalize_glossary(project.get("glossary")))
 
 
 def load_project(project_id: str) -> dict[str, Any]:
@@ -280,6 +305,9 @@ def run_diarization(project_id: str, job_id: str, token: str | None, offline: bo
             env["HF_HUB_OFFLINE"] = "1"
         env["PYTHONUTF8"] = "1"
         env["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+        local_pyannote_cache = DATA_ROOT / "model-cache" / "torch" / "pyannote"
+        if local_pyannote_cache.is_dir():
+            env.setdefault("PYANNOTE_CACHE", str(local_pyannote_cache))
         update_job(job_id, message="pyannote 正在做全局说话人分离…")
         command = [str(VOICEID_PYTHON), str(DIARIZE_SCRIPT), str(audio), "-o", str(out)]
         if offline:
@@ -305,7 +333,20 @@ def run_diarization(project_id: str, job_id: str, token: str | None, offline: bo
         job_error(job_id, exc)
 
 
-def asr_request(audio_path: Path, config: dict[str, Any], offset: float, language: str | None) -> tuple[list[dict], str, str]:
+def load_asr_config() -> dict[str, Any]:
+    if _runtime_asr_config.get("api_key"):
+        return dict(_runtime_asr_config)
+    if ASR_CONFIG.is_file():
+        return read_json(ASR_CONFIG)
+    return {
+        "api_url": os.environ.get("ASR_API_URL", "https://ai-service.segway-ninebot.com/v1/audio/transcriptions"),
+        "api_key": os.environ.get("ASR_API_KEY", ""),
+        "model": os.environ.get("ASR_MODEL", "qwen3-asr"),
+        "language": os.environ.get("ASR_LANGUAGE", "zh"),
+    }
+
+
+def asr_request(audio_path: Path, config: dict[str, Any], offset: float, language: str | None, prompt: str = "") -> tuple[list[dict], str, str]:
     """调用公司 qwen3-asr，优先协商 OpenAI 风格 verbose_json + segment timestamps。
 
     不同网关对可选字段的兼容性可能不同：先请求时间戳格式；若服务拒绝
@@ -318,8 +359,13 @@ def asr_request(audio_path: Path, config: dict[str, Any], offset: float, languag
     base = {"model": model}
     if language and language != "auto":
         base["language"] = language
+    prompt = str(prompt or "").strip()
+    prompted = {**base, "prompt": prompt[:1800]} if prompt else base
 
     candidates = [
+        {**prompted, "response_format": "verbose_json", "timestamp_granularities[]": "segment"},
+        {**prompted, "response_format": "verbose_json"},
+        prompted,
         {**base, "response_format": "verbose_json", "timestamp_granularities[]": "segment"},
         {**base, "response_format": "verbose_json"},
         base,
@@ -377,15 +423,7 @@ def asr_request(audio_path: Path, config: dict[str, Any], offset: float, languag
 
 def run_route_a_asr(project_id: str, job_id: str, language: str | None = "zh") -> None:
     try:
-        if ASR_CONFIG.is_file():
-            config = read_json(ASR_CONFIG)
-        else:
-            config = {
-                "api_url": os.environ.get("ASR_API_URL", "https://ai-service.segway-ninebot.com/v1/audio/transcriptions"),
-                "api_key": os.environ.get("ASR_API_KEY", ""),
-                "model": os.environ.get("ASR_MODEL", "qwen3-asr"),
-                "language": os.environ.get("ASR_LANGUAGE", "zh"),
-            }
+        config = load_asr_config()
         if not config.get("api_key"):
             raise FileNotFoundError("未配置 qwen3-asr：请设置 ASR_CONFIG_PATH 或 ASR_API_KEY。")
         project = load_project(project_id)
@@ -408,7 +446,7 @@ def run_route_a_asr(project_id: str, job_id: str, language: str | None = "zh") -
                 raise RuntimeError(command.stderr[-1200:])
             language_label = language or "自动"
             update_job(job_id, message=f"qwen3-asr 转写中（{language_label}）：第 {index + 1} 段，{pos:.0f}s / {total:.0f}s")
-            segments, text, quality = asr_request(chunk, config, pos, language)
+            segments, text, quality = asr_request(chunk, config, pos, language, glossary_prompt(project))
             all_segments.extend(segments)
             raw_texts.append(text)
             qualities.append(quality)
@@ -453,23 +491,31 @@ def build_speaker_asr_blocks(segments: list[dict], max_duration: float = 18.0, j
     return blocks
 
 
-def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | None = "zh") -> None:
-    """qwen3-asr text + local pyannote boundaries = speaker-attributed timestamp transcript.
+def asr_with_retries(audio_path: Path, config: dict[str, Any], offset: float, language: str | None, prompt: str, attempts: int = 3) -> tuple[list[dict], str, str]:
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return asr_request(audio_path, config, offset, language, prompt)
+        except Exception as exc:
+            last_error = exc
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status in {400, 401, 403, 404, 422} or attempt >= attempts:
+                raise
+            time.sleep(2 * attempt)
+    raise RuntimeError(str(last_error or "qwen3-asr 调用失败"))
 
-    This is the preferred path when qwen returns plain text but no native timestamps.
-    It intentionally runs after diarization, because each qwen request is cut from a
-    known speaker block and inherits that block's start/end/speaker.
-    """
+
+def speaker_block_cache_key(block: dict[str, Any], language: str | None, model: str, glossary: str) -> str:
+    return "|".join([
+        f"{float(block['start']):.3f}", f"{float(block['end']):.3f}", str(block["speaker"]),
+        str(language or "auto"), str(model), glossary,
+    ])
+
+
+def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | None = "zh") -> None:
+    """qwen3-asr text + local pyannote boundaries, with retry and resume cache."""
     try:
-        if ASR_CONFIG.is_file():
-            config = read_json(ASR_CONFIG)
-        else:
-            config = {
-                "api_url": os.environ.get("ASR_API_URL", "https://ai-service.segway-ninebot.com/v1/audio/transcriptions"),
-                "api_key": os.environ.get("ASR_API_KEY", ""),
-                "model": os.environ.get("ASR_MODEL", "qwen3-asr"),
-                "language": os.environ.get("ASR_LANGUAGE", "zh"),
-            }
+        config = load_asr_config()
         if not config.get("api_key"):
             raise FileNotFoundError("未配置 qwen3-asr：请设置 ASR_CONFIG_PATH 或 ASR_API_KEY。")
         project = load_project(project_id)
@@ -485,33 +531,49 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
             raise RuntimeError("Speaker 分离结果中没有可转写的有效发言片段")
         chunks_dir = project_dir(project_id) / "qwen_speaker_chunks"
         chunks_dir.mkdir(exist_ok=True)
+        cache_path = project_dir(project_id) / "qwen_speaker_cache.json"
+        cache = read_json(cache_path) if cache_path.is_file() else {"version": 1, "entries": {}}
+        if not isinstance(cache.get("entries"), dict):
+            cache = {"version": 1, "entries": {}}
+        glossary = glossary_prompt(project)
         transcript, raw_texts = [], []
+        cache_hits = 0
+        model = str(config.get("model", "qwen3-asr"))
         for index, block in enumerate(blocks, 1):
-            duration = block["end"] - block["start"]
-            chunk = chunks_dir / f"speaker_{index:04d}_{block['speaker']}.wav"
-            command = subprocess.run(
-                [str(FFMPEG), "-y", "-ss", str(block["start"]), "-t", str(duration), "-i", str(audio),
-                 "-ar", "16000", "-ac", "1", str(chunk)],
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-            )
-            if command.returncode != 0:
-                raise RuntimeError(command.stderr[-1200:])
-            language_label = language or "自动"
-            update_job(job_id, message=f"qwen3-asr 署名转写（{language_label}）：第 {index}/{len(blocks)} 段")
-            response_segments, text, _ = asr_request(chunk, config, block["start"], language)
-            # qwen may return verbose segments or only a single text chunk. The local
-            # Speaker block remains the authoritative identity for either response.
-            if not text.strip() and response_segments:
-                text = " ".join(str(item.get("text", "")) for item in response_segments).strip()
-            if text.strip():
+            key = speaker_block_cache_key(block, language, model, glossary)
+            cached = cache["entries"].get(key) or {}
+            text = str(cached.get("text", "")).strip()
+            if text:
+                cache_hits += 1
+                update_job(job_id, message=f"恢复已完成片段：第 {index}/{len(blocks)} 段（缓存 {cache_hits}）")
+            else:
+                duration = block["end"] - block["start"]
+                chunk = chunks_dir / f"speaker_{index:04d}_{block['speaker']}.wav"
+                command = subprocess.run(
+                    [str(FFMPEG), "-y", "-ss", str(block["start"]), "-t", str(duration), "-i", str(audio),
+                     "-ar", "16000", "-ac", "1", str(chunk)],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                )
+                if command.returncode != 0:
+                    raise RuntimeError(command.stderr[-1200:])
+                language_label = language or "自动"
+                update_job(job_id, message=f"qwen3-asr 署名转写（{language_label}）：第 {index}/{len(blocks)} 段；失败自动重试")
+                response_segments, text, _ = asr_with_retries(chunk, config, block["start"], language, glossary)
+                if not text.strip() and response_segments:
+                    text = " ".join(str(item.get("text", "")) for item in response_segments).strip()
+                text = text.strip()
+                if text:
+                    cache["entries"][key] = {
+                        "start": round(block["start"], 3), "end": round(block["end"], 3),
+                        "speaker": block["speaker"], "text": text, "updated_at": now(),
+                    }
+                    write_json(cache_path, cache)
+            if text:
                 transcript.append({
-                    "start": round(block["start"], 3),
-                    "end": round(block["end"], 3),
-                    "text": text.strip(),
-                    "speaker_hint": block["speaker"],
-                    "timing_quality": "speaker_block",
+                    "start": round(block["start"], 3), "end": round(block["end"], 3),
+                    "text": text, "speaker_hint": block["speaker"], "timing_quality": "speaker_block",
                 })
-                raw_texts.append(text.strip())
+                raw_texts.append(text)
         if not transcript:
             raise RuntimeError("qwen3-asr 未返回可用文字")
         project = load_project(project_id)
@@ -519,12 +581,17 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
         project["asr_raw_text"] = "\n".join(raw_texts)
         project["asr_timing_quality"] = "speaker_block"
         project["asr_source"] = f"company qwen3-asr + local pyannote speaker blocks; requested_language={language or 'auto'}"
+        project["transcript_segments"] = [
+            {"id": uuid.uuid4().hex[:10], "start": item["start"], "end": item["end"],
+             "speaker": item["speaker_hint"], "text": item["text"], "timing_quality": "speaker_block"}
+            for item in transcript
+        ]
+        project["qwen_cache_path"] = str(cache_path)
+        project["qwen_cache_hits"] = cache_hits
         save_project(project)
-        write_json(project_dir(project_id) / "qwen3_speaker_transcript_segments.json", {"segments": transcript, "text": project["asr_raw_text"], "timing_quality": "speaker_block"})
-        update_job(job_id, status="done", message=f"qwen3-asr 署名转写完成：{len(transcript)} 个 Speaker 文字块", finished_at=now())
+        update_job(job_id, status="done", message=f"完成：{len(transcript)} 个带 Speaker 文字块；复用缓存 {cache_hits} 段", finished_at=now())
     except Exception as exc:
         job_error(job_id, exc)
-
 
 def run_recommended_pipeline(project_id: str, job_id: str, language: str | None = "zh") -> None:
     """Recommended sequential pipeline: offline diarization → qwen speaker-aware ASR."""
@@ -684,15 +751,115 @@ def transcript_for_agent(project: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def llm_minutes_prompt(project: dict[str, Any]) -> tuple[str, str]:
-    if not MINUTES_SKILL.is_file():
-        raise FileNotFoundError(f"未找到会议纪要 Skill：{MINUTES_SKILL}")
-    skill = MINUTES_SKILL.read_text(encoding="utf-8")
-    transcript = transcript_for_agent(project)
-    system = f"""你是多听工作台的会议总结纪要 Agent。请严格遵守下面的 Skill 规则。\n\n{skill}\n\n只输出最终中文 Markdown 会议纪要，不要解释你使用了哪些规则，不要输出 JSON。"""
-    user = f"""请根据下面项目的带 Speaker、带时间戳逐字稿，生成正式会议总结纪要。\n\n项目标题：{project.get('title', '未命名项目')}\n项目编号：{project.get('project_code', project.get('id', '未提供'))}\n来源文件：{json.dumps(project.get('media_paths') or [project.get('media_path')], ensure_ascii=False)}\n\n逐字稿：\n{transcript}\n\n要求：\n1. 保留关键数字、单位和不确定性口径。\n2. 严格区分事实、决策、正式行动项、建议跟进、风险、开放问题。\n3. 未明确负责人或截止时间时写“未明确”，禁止臆造。\n4. 对可能的 ASR 错词、数字或 Speaker 归属添加复核提示。\n5. 结论先行，适合后续形成会议总结和纪要。"""
-    return system, user
+def summary_skill_metadata(skill_id: str, path: Path) -> dict[str, str]:
+    text = path.read_text(encoding="utf-8")
+    name_match = re.search(r"(?m)^name:\s*([^\n]+)", text)
+    heading_match = re.search(r"(?m)^#\s+(.+)$", text)
+    description_match = re.search(r"(?ms)^description:\s*>?\s*(.+?)(?=\n[a-zA-Z][\w-]*:|\n---)", text)
+    title = heading_match.group(1).strip() if heading_match else skill_id
+    description = re.sub(r"\s+", " ", description_match.group(1)).strip() if description_match else ""
+    return {"id": skill_id, "name": (name_match.group(1).strip() if name_match else skill_id), "title": title, "description": description[:220]}
 
+
+def available_summary_skills() -> list[dict[str, str]]:
+    skills = []
+    if SUMMARY_SKILLS_DIR.is_dir():
+        for directory in sorted(SUMMARY_SKILLS_DIR.iterdir()):
+            skill_file = directory / "SKILL.md"
+            if directory.is_dir() and skill_file.is_file() and re.fullmatch(r"[a-z0-9][a-z0-9-]{1,80}", directory.name):
+                skills.append(summary_skill_metadata(directory.name, skill_file))
+    return skills
+
+
+def resolve_summary_skill(skill_id: str) -> tuple[dict[str, str], Path]:
+    skill_id = str(skill_id or DEFAULT_SUMMARY_SKILL).strip()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,80}", skill_id):
+        raise ValueError("总结 Skill 名称不合法。")
+    path = SUMMARY_SKILLS_DIR / skill_id / "SKILL.md"
+    if not path.is_file():
+        raise FileNotFoundError(f"未找到总结 Skill：{skill_id}")
+    return summary_skill_metadata(skill_id, path), path
+
+
+def split_transcript_for_llm(transcript: str, max_chars: int = LLM_CHUNK_CHAR_LIMIT) -> list[str]:
+    chunks, current = [], []
+    size = 0
+    for line in transcript.splitlines():
+        extra = len(line) + 1
+        if current and size + extra > max_chars:
+            chunks.append("\n".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += extra
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
+def report_context(project: dict[str, Any]) -> str:
+    terms = glossary_prompt(project)
+    return f"""项目标题：{project.get('title', '未命名项目')}
+项目编号：{project.get('project_code', project.get('id', '未提供'))}
+来源文件：{json.dumps(project.get('media_paths') or [project.get('media_path')], ensure_ascii=False)}
+业务术语词表：{terms or '未提供'}"""
+
+
+def llm_report_prompt(project: dict[str, Any], skill_id: str, source_text: str | None = None) -> tuple[str, str, dict[str, str]]:
+    metadata, skill_path = resolve_summary_skill(skill_id)
+    skill = skill_path.read_text(encoding="utf-8")
+    transcript = source_text if source_text is not None else transcript_for_agent(project)
+    system = f"""你是多听工作台的音视频总结 Agent。请严格遵守下面的 Skill 规则。
+
+{skill}
+
+只输出最终中文 Markdown 交付物，不要解释你使用了哪些规则，不要输出 JSON。"""
+    user = f"""请根据下面带 Speaker、带时间戳的逐字稿生成“{metadata['title']}”。
+
+{report_context(project)}
+
+逐字稿或分段事实笔记：
+{transcript}
+
+统一要求：
+1. 保留关键数字、单位、人物归属、时间戳和不确定性口径。
+2. 严格区分原文事实、明确结论和分析推断。
+3. 未明确的负责人、日期、型号、结论不得臆造。
+4. 结合业务术语词表修正明显 ASR 同音错词；无法确认时标记“待复核”。
+5. 输出应可直接审改，并能追溯到原始时间戳。"""
+    return system, user, metadata
+
+
+def llm_chat(system: str, user: str, temperature: float = 0.2) -> str:
+    import requests
+    body = {
+        "model": _llm_config.get("model"),
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "temperature": temperature,
+    }
+    response = requests.post(llm_endpoint("chat/completions"), headers=llm_headers(), json=body, timeout=900)
+    response.raise_for_status()
+    return extract_chat_content(response.json())
+
+
+def generate_report_content(project: dict[str, Any], skill_id: str) -> tuple[str, dict[str, str], int]:
+    transcript = transcript_for_agent(project)
+    if len(transcript) <= LLM_DIRECT_CHAR_LIMIT:
+        system, user, metadata = llm_report_prompt(project, skill_id, transcript)
+        return llm_chat(system, user), metadata, 1
+    chunks = split_transcript_for_llm(transcript)
+    notes = []
+    glossary = glossary_prompt(project)
+    for index, chunk in enumerate(chunks, 1):
+        system = "你是长音视频逐字稿的事实抽取器。只抽取本段明确事实、数字、人物观点、决定、行动项、风险、开放问题和重要术语；每条保留时间戳，不要臆造，不要写最终总结。"
+        user = f"分段 {index}/{len(chunks)}。业务术语：{glossary or '未提供'}。\n\n{chunk}"
+        notes.append(f"## 分段 {index}/{len(chunks)}\n" + llm_chat(system, user, 0.1))
+    system, user, metadata = llm_report_prompt(project, skill_id, "\n\n".join(notes))
+    return llm_chat(system, user), metadata, len(chunks) + 1
+
+
+def llm_minutes_prompt(project: dict[str, Any]) -> tuple[str, str]:
+    system, user, _ = llm_report_prompt(project, DEFAULT_SUMMARY_SKILL)
+    return system, user
 
 def extract_chat_content(payload: dict[str, Any]) -> str:
     choices = payload.get("choices") or []
@@ -753,7 +920,11 @@ def set_llm_config():
     if not model:
         return jsonify(error="请填写或选择模型名称。"), 400
     _llm_config.update({"api_url": api_url, "api_key": api_key, "model": model})
-    return jsonify({"api_url": api_url, "model": model, "configured": True})
+    _runtime_asr_config.update({
+        "api_url": f"{api_url}/v1/audio/transcriptions", "api_key": api_key,
+        "model": os.environ.get("ASR_MODEL", "qwen3-asr"), "language": os.environ.get("ASR_LANGUAGE", "zh"),
+    })
+    return jsonify({"api_url": api_url, "model": model, "configured": True, "asr_configured": True})
 
 
 @app.post("/api/llm/models")
@@ -774,33 +945,55 @@ def list_llm_models():
         return jsonify(error=f"读取模型列表失败：{exc}"), 400
 
 
+@app.get("/api/summary-skills")
+def list_summary_skills():
+    return jsonify({"default": DEFAULT_SUMMARY_SKILL, "skills": available_summary_skills()})
+
+
+def generate_and_save_report(project_id: str, skill_id: str) -> dict[str, Any]:
+    project = load_project(project_id)
+    content, metadata, request_count = generate_report_content(project, skill_id)
+    exports = project_dir(project_id) / "exports"
+    exports.mkdir(exist_ok=True)
+    code = project.get("project_code") or project.get("id")
+    title_slug = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", metadata["title"])[:50] or skill_id
+    report_path = exports / f"{code}__OUT__{title_slug}.md"
+    report_path.write_text(content + ("\n" if not content.endswith("\n") else ""), encoding="utf-8")
+    reports = project.get("reports") if isinstance(project.get("reports"), dict) else {}
+    reports[skill_id] = {
+        "path": str(report_path), "title": metadata["title"], "model": _llm_config.get("model"),
+        "generated_at": now(), "llm_requests": request_count,
+    }
+    project["reports"] = reports
+    project["latest_report_skill"] = skill_id
+    project["latest_report_path"] = str(report_path)
+    if skill_id == DEFAULT_SUMMARY_SKILL:
+        project["minutes_path"] = str(report_path)
+        project["minutes_model"] = _llm_config.get("model")
+        project["minutes_generated_at"] = now()
+    save_project(project)
+    return {
+        "path": f"/api/projects/{project_id}/download/report/{skill_id}",
+        "skill": skill_id, "title": metadata["title"], "model": _llm_config.get("model"),
+        "llm_requests": request_count, "project": public_project(project),
+    }
+
+
+@app.post("/api/projects/<project_id>/generate-report")
+def generate_report(project_id: str):
+    try:
+        payload = request.get_json(silent=True) or {}
+        return jsonify(generate_and_save_report(project_id, str(payload.get("skill") or DEFAULT_SUMMARY_SKILL)))
+    except Exception as exc:
+        return jsonify(error=f"生成总结报告失败：{exc}"), 400
+
+
 @app.post("/api/projects/<project_id>/generate-minutes")
 def generate_minutes(project_id: str):
     try:
-        project = load_project(project_id)
-        system, user = llm_minutes_prompt(project)
-        import requests
-        body = {
-            "model": _llm_config.get("model"),
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "temperature": 0.2,
-        }
-        response = requests.post(llm_endpoint("chat/completions"), headers=llm_headers(), json=body, timeout=600)
-        response.raise_for_status()
-        content = extract_chat_content(response.json())
-        exports = project_dir(project_id) / "exports"
-        exports.mkdir(exist_ok=True)
-        code = project.get("project_code") or project.get("id")
-        minutes_path = exports / f"{code}__OUT__会议总结纪要.md"
-        minutes_path.write_text(content + ("\n" if not content.endswith("\n") else ""), encoding="utf-8")
-        project["minutes_path"] = str(minutes_path)
-        project["minutes_model"] = _llm_config.get("model")
-        project["minutes_generated_at"] = now()
-        save_project(project)
-        return jsonify({"path": f"/api/projects/{project_id}/download/minutes", "model": _llm_config.get("model"), "project": public_project(project)})
+        return jsonify(generate_and_save_report(project_id, DEFAULT_SUMMARY_SKILL))
     except Exception as exc:
         return jsonify(error=f"生成会议纪要失败：{exc}"), 400
-
 
 @app.get("/")
 def index():
@@ -846,6 +1039,7 @@ def create_project():
         "transcript_segments": [],
         "speaker_map": {},
         "expected_speakers": int(payload["expected_speakers"]) if str(payload.get("expected_speakers", "")).isdigit() else None,
+        "glossary": normalize_glossary(payload.get("glossary")),
     }
     project_dir(project_id).mkdir(parents=True, exist_ok=True)
     reference_path = str(payload.get("reference_text_path", "")).strip().strip('"')
@@ -878,6 +1072,7 @@ def upload_project():
         sources.append(source)
     expected_raw = str(request.form.get("expected_speakers", "")).strip()
     expected_speakers = int(expected_raw) if expected_raw.isdigit() and 1 <= int(expected_raw) <= 20 else None
+    glossary = normalize_glossary(request.form.get("glossary", ""))
     project = {
         "id": project_id, "title": title, "created_at": now(), "updated_at": now(),
         "media_path": str(sources[0]), "media_paths": [str(source) for source in sources],
@@ -885,6 +1080,7 @@ def upload_project():
         "diarization_segments": [], "asr_segments": [], "asr_raw_text": "",
         "asr_timing_quality": "", "transcript_segments": [], "speaker_map": {},
         "expected_speakers": expected_speakers,
+        "glossary": glossary,
     }
     save_project(project)
     return jsonify(public_project(project)), 201
@@ -906,25 +1102,55 @@ def create_youtube_project():
     folder = project_dir(project_id)
     folder.mkdir(parents=True, exist_ok=True)
     try:
-        import yt_dlp
         output = folder / "source_%(id)s.%(ext)s"
-        options = {
-            "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "outtmpl": str(output),
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "restrictfilenames": True,
-        }
-        with yt_dlp.YoutubeDL(options) as downloader:
-            info = downloader.extract_info(url, download=True)
-            prepared = downloader.prepare_filename(info)
-        source = Path(prepared)
+        try:
+            import yt_dlp
+            options = {
+                "format": "bestaudio[ext=m4a]/bestaudio/best",
+                "outtmpl": str(output), "noplaylist": True, "quiet": True,
+                "no_warnings": True, "restrictfilenames": True,
+            }
+            if os.environ.get("YTDLP_PROXY", "").strip():
+                options["proxy"] = os.environ["YTDLP_PROXY"].strip()
+            with yt_dlp.YoutubeDL(options) as downloader:
+                info = downloader.extract_info(url, download=True)
+                prepared = downloader.prepare_filename(info)
+            source = Path(prepared)
+        except ModuleNotFoundError:
+            yt_python = os.environ.get("YTDLP_PYTHON", "").strip()
+            prefix = [yt_python] if yt_python else (["py", "-3.12"] if shutil.which("py") else [sys.executable])
+            proxy_args = ["--proxy", os.environ["YTDLP_PROXY"].strip()] if os.environ.get("YTDLP_PROXY", "").strip() else []
+            process = subprocess.run(
+                [*prefix, "-m", "yt_dlp", "--no-playlist", "--quiet", "--no-warnings", "--restrict-filenames",
+                 *proxy_args, "--print-json", "-f", "bestaudio[ext=m4a]/bestaudio/best", "-o", str(output), url],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+            )
+            if process.returncode != 0:
+                raise RuntimeError(process.stderr[-1600:] or "yt-dlp 命令行下载失败")
+            lines = [line for line in process.stdout.splitlines() if line.strip().startswith("{")]
+            info = json.loads(lines[-1]) if lines else {}
+            source = Path(str(info.get("_filename") or ""))
         if not source.is_file():
             candidates = sorted(folder.glob("source_*"), key=lambda path: path.stat().st_mtime, reverse=True)
             source = candidates[0] if candidates else source
         if not source.is_file():
             raise RuntimeError("YouTube 音频下载完成但未找到本地文件")
+        original_source = source
+        clip_start = max(0.0, float(payload.get("clip_start") or 0))
+        clip_duration = float(payload.get("clip_duration") or 0)
+        if clip_duration:
+            if not 5 <= clip_duration <= 600:
+                raise ValueError("YouTube 截取时长需在 5–600 秒之间。")
+            if not FFMPEG.is_file():
+                raise FileNotFoundError(f"未找到 ffmpeg：{FFMPEG}")
+            clipped = folder / f"source_{str(info.get('id') or 'youtube')}_clip_{int(clip_start)}s_{int(clip_duration)}s.wav"
+            cut = subprocess.run(
+                [str(FFMPEG), "-y", "-ss", str(clip_start), "-t", str(clip_duration), "-i", str(original_source), "-ar", "16000", "-ac", "1", str(clipped)],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+            )
+            if cut.returncode != 0:
+                raise RuntimeError(cut.stderr[-1600:] or "YouTube 音频截取失败")
+            source = clipped
         title = str(payload.get("title", "")).strip() or str(info.get("title") or source.stem)
         project = {
             "id": project_id,
@@ -938,6 +1164,9 @@ def create_youtube_project():
             "youtube_id": str(info.get("id") or ""),
             "youtube_title": str(info.get("title") or title),
             "youtube_uploader": str(info.get("uploader") or ""),
+            "youtube_original_media_path": str(original_source),
+            "youtube_clip_start": clip_start,
+            "youtube_clip_duration": clip_duration or None,
             "diarization_segments": [],
             "asr_segments": [],
             "asr_raw_text": "",
@@ -945,6 +1174,7 @@ def create_youtube_project():
             "transcript_segments": [],
             "speaker_map": {},
             "expected_speakers": expected_speakers,
+            "glossary": normalize_glossary(payload.get("glossary")),
         }
         save_project(project)
         return jsonify(public_project(project)), 201
@@ -956,7 +1186,8 @@ def create_youtube_project():
 
 @app.post("/api/projects/demo")
 def load_demo():
-    base = WORKSPACE / "会话总结_0826"
+    candidates = [DATA_ROOT / "source-materials" / "会话总结_0826", WORKSPACE / "会话总结_0826"]
+    base = next((path for path in candidates if path.is_dir()), candidates[0])
     media = base / "新录音 8_audio.wav"
     diar = base / "diar_audio8" / "diarization.json"
     text = base / "audio8_transcript.txt"
@@ -964,7 +1195,7 @@ def load_demo():
         return jsonify(error="未找到当前会话示例文件。"), 404
     project_id = uuid.uuid4().hex[:10]
     segments = normalize_diarization(read_json(diar))
-    project = {"id": project_id, "title": "新录音 8 — 访谈", "created_at": now(), "updated_at": now(), "media_path": str(media), "audio_path": str(media), "diarization_segments": segments, "diarization_source": str(diar), "asr_segments": [], "asr_raw_text": "", "asr_timing_quality": "", "transcript_segments": [], "speaker_map": make_speaker_map(segments), "reference_text": text.read_text(encoding="utf-8", errors="replace") if text.is_file() else ""}
+    project = {"id": project_id, "title": "新录音 8 — 访谈", "created_at": now(), "updated_at": now(), "media_path": str(media), "audio_path": str(media), "diarization_segments": segments, "diarization_source": str(diar), "asr_segments": [], "asr_raw_text": "", "asr_timing_quality": "", "transcript_segments": [], "speaker_map": make_speaker_map(segments), "glossary": [], "reference_text": text.read_text(encoding="utf-8", errors="replace") if text.is_file() else ""}
     project_dir(project_id).mkdir(parents=True, exist_ok=True)
     save_project(project)
     return jsonify(public_project(project)), 201
@@ -1135,6 +1366,18 @@ def update_speakers(project_id: str):
         return jsonify(error=str(exc)), 400
 
 
+@app.put("/api/projects/<project_id>/glossary")
+def update_glossary(project_id: str):
+    try:
+        payload = request.get_json(silent=True) or {}
+        project = load_project(project_id)
+        project["glossary"] = normalize_glossary(payload.get("glossary"))
+        save_project(project)
+        return jsonify(public_project(project))
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
+
+
 @app.post("/api/projects/<project_id>/align")
 def align_transcript(project_id: str):
     try:
@@ -1190,6 +1433,16 @@ def download_export(project_id: str, format_name: str):
     if format_name not in paths:
         return jsonify(error="不支持的导出格式"), 404
     return send_file(paths[format_name], as_attachment=True)
+
+
+@app.get("/api/projects/<project_id>/download/report/<skill_id>")
+def download_report(project_id: str, skill_id: str):
+    project = load_project(project_id)
+    reports = project.get("reports") if isinstance(project.get("reports"), dict) else {}
+    path = Path(str((reports.get(skill_id) or {}).get("path", "")))
+    if not path.is_file():
+        return jsonify(error="当前项目还没有该类型报告。"), 404
+    return send_file(path, as_attachment=True)
 
 
 @app.get("/api/projects/<project_id>/download/minutes")

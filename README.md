@@ -44,7 +44,7 @@ $env:MEETING_DATA_ROOT = "D:\多听工作台"
 $env:MEETING_PROJECTS_DIR = "D:\多听工作台\data\projects"
 ```
 
-`start_studio.ps1` 会在检测到 `D:\多听工作台\data\projects` 后自动使用该目录；未迁移时会回退到仓库内的 `data\projects`。模型缓存也会优先使用 `D:\多听工作台\model-cache`。
+`start_studio.ps1` 会在检测到 `D:\多听工作台\data\projects` 后自动使用该目录；未迁移时会回退到仓库内的 `data\projects`。模型缓存也会优先使用 `D:\多听工作台\model-cache`；pyannote 使用 `model-cache\torch\pyannote`。
 
 首次迁移现有本地项目和材料时，在停止工作台后执行：
 
@@ -56,12 +56,21 @@ python scripts\migrate_storage.py
 
 ## 模型设置
 
-会议纪要模型在页面“模型设置”中配置：
+转写与总结共用页面“模型设置”中的公司网关 API Key：
 
 - API URL 默认 `https://ai-service.segway-ninebot.com`；
-- API Key 只保存在当前进程内存，不提交到 Git；
+- API Key 同时用于 `qwen3-asr` 与总结模型，只保存在当前进程内存，不提交到 Git；
 - 模型可通过 `/v1/models` 获取，也可手动填写；
-- 纪要 Skill 位于 `skills/meeting-minutes-synthesis-zh/SKILL.md`。
+- 默认使用低倍率公网模型 `external/glm-5.3-flash`，需要更强推理时切换 `external/glm-5.3` 或 `external/gpt-5.6-luna`；
+- 默认低倍率模型为 `external/glm-5.3-flash`；
+- `skills/` 中包含会议纪要、业务访谈洞察、培训讲解和通用音视频报告 4 个 Skill。
+
+## 质量与稳定性
+
+- 项目级业务术语词表会进入 ASR 请求和总结提示；
+- qwen Speaker 分片失败会自动重试，成功结果逐片缓存，重跑可断点续跑；
+- 长逐字稿超过阈值后先分段抽取事实，再生成最终报告；
+- YouTube 可选截取 5–600 秒，便于快速演示和回归。
 
 ## 多文件会议
 
