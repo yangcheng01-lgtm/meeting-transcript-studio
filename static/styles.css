@@ -33,7 +33,12 @@ dialog{border:0;padding:0;background:transparent;max-width:min(620px,calc(100vw 
 .status-highlight{background:#35c46f!important;color:#fff!important;border-color:#35c46f!important}
 @keyframes actionPulse{0%,100%{box-shadow:0 0 0 rgba(53,196,111,.12)}50%{box-shadow:0 0 18px rgba(53,196,111,.55)}}
 
-.result-export{position:relative}
-.result-export-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;background:#fff;border:1px solid var(--ink);box-shadow:4px 4px 0 rgba(20,20,22,.18);display:grid;min-width:210px}
-.result-export-menu button{padding:10px 12px;text-align:left;background:#fff;font-size:13px;font-weight:700}
+.btn-group{position:relative;display:flex;align-items:stretch}
+.btn-group .primary{border-radius:0}
+.btn-split-toggle{width:28px;font-size:11px;padding:10px 0;display:flex;align-items:center;justify-content:center;border-left:1px solid rgba(255,255,255,.3)}
+.result-export-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:30;background:#fff;border:1px solid var(--ink);box-shadow:4px 4px 0 rgba(20,20,22,.18);display:grid;min-width:200px}
+.result-export-menu button{padding:10px 12px;text-align:left;background:#fff;font-size:12px;font-weight:700;border:0;cursor:pointer}
 .result-export-menu button:hover{background:var(--orange);color:#fff}
+
+.delivery-buttons{align-items:stretch}
+.summary-skill{align-self:stretch}

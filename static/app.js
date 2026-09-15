@@ -342,8 +342,9 @@ $("#llmModelSelect").onchange = () => { if ($("#llmModelSelect").value) $("#llmM
 $("#llmModelInput").oninput = () => { if ($("#llmModelInput").value.trim()) $("#llmModelSelect").value = ""; };
 $("#saveSettingsBtn").onclick = (event) => { event.preventDefault(); saveModelSettings().catch((e) => toast(e.message, true)); };
 $("#generateMinutesBtn").onclick = generateReport;
-$("#resultExportToggle").onclick = toggleResultExportMenu;
-document.addEventListener("click", (event) => { if (!event.target.closest(".result-export")) $("#resultExportMenu").classList.add("hidden"); });
+$("#resultExportToggle").onclick = (e) => { e.stopPropagation(); toggleResultExportMenu(); };
+$("#rerunPipelineBtn").onclick = async () => { $("#resultExportMenu").classList.add("hidden"); try{const language=$("#asrLanguage")?.value||"zh"; const job=await api(`/api/projects/${state.project.id}/process/full-pipeline`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({language})});toast("已开始重新识别。");jobStatus(job)}catch(e){toast(e.message,true)} };
+document.addEventListener("click", (event) => { if (!event.target.closest(".btn-group")) $("#resultExportMenu").classList.add("hidden"); });
 $("#generateMinutesAdvancedBtn").onclick = generateReport;
 $("#saveGlossaryBtn").onclick = saveGlossary;
 async function openSpeakerCorrectionDialog() {
