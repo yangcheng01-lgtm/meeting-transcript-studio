@@ -52,6 +52,7 @@ function selectedSpeakers(speaker) {
 function renderProject() {
   const p = state.project;
   if (!p) return;
+  $("#projectStatus").classList.remove("status-highlight");
   const hasDiar = Boolean(p.diarization_segments?.length);
   const hasTranscript = Boolean(p.transcript_segments?.length);
   const missingNames = unresolvedSpeakers(p);
@@ -70,7 +71,7 @@ function renderProject() {
   $("#diarStatus").textContent = hasDiar ? `${p.diarization_segments.length} 个时间片段` : "尚未运行";
   $("#asrStatus").textContent = p.asr_segments?.length ? `${p.asr_segments.length} 个文字片段 · ${p.asr_timing_quality === "coarse" ? "不可可靠对齐" : "可对齐"}` : "等待 qwen3-asr";
   $("#alignStatus").textContent = hasTranscript ? `${p.transcript_segments.length} 段已对齐` : "等待结果";
-  $("#projectStatus").textContent = hasTranscript ? (missingNames.length ? "待填写人名" : "可导出") : hasDiar ? "转写处理中 / 待转写" : "等待处理";
+  $("#projectStatus").textContent = hasTranscript ? (missingNames.length ? "待填写人名" : "可生成报告") : hasDiar ? "转写处理中 / 待转写" : "等待处理";
   $("#runPipelineBtn").textContent = hasTranscript ? "重新识别" : "开始识别";
   $("#simpleRecognizeStatus").textContent = hasTranscript ? "识别已完成，可重新运行" : hasDiar ? "Speaker 已完成，等待文字" : "导入后点击开始";
   $("#simpleNamingStatus").textContent = !hasDiar ? "等待识别完成" : missingNames.length ? `还需命名 ${missingNames.length} 位说话人` : "人名已确认";
@@ -78,6 +79,9 @@ function renderProject() {
   $("#simpleExportBtn").disabled = !hasTranscript || Boolean(missingNames.length);
   $("#generateMinutesBtn").disabled = !hasTranscript || Boolean(missingNames.length);
   $("#generateMinutesAdvancedBtn").disabled = !hasTranscript || Boolean(missingNames.length);
+  const saveSpeakersBtn = $("#saveSpeakersBtn");
+  saveSpeakersBtn.classList.toggle("action-highlight", hasDiar && Boolean(missingNames.length));
+  $("#generateMinutesBtn").classList.toggle("action-highlight", hasTranscript && !missingNames.length);
   $("#referenceText").textContent = p.reference_text || p.asr_raw_text || "尚未导入纯文字稿。";
   if ($("#glossaryInput")) $("#glossaryInput").value = (p.glossary || []).join("\n");
   if (p.latest_report_skill && $("#summarySkillSelect")) $("#summarySkillSelect").value = p.latest_report_skill;
@@ -187,9 +191,10 @@ function jobStatus(job, onDone = refreshProject) {
     try {
       const current = await api("/api/jobs/" + jobId);
       $("#projectStatus").textContent = current.message || current.status;
+      $("#projectStatus").classList.add("status-highlight");
       renderJobProgress(current);
-      if (current.status === "done") { $("#jobProgress").classList.add("hidden"); toast(current.message); await onDone(); return; }
-      if (current.status === "error") { $("#jobProgress").classList.add("hidden"); toast(current.message, true); return; }
+      if (current.status === "done") { $("#jobProgress").classList.add("hidden"); $("#projectStatus").classList.remove("status-highlight"); toast(current.message); await onDone(); return; }
+      if (current.status === "error") { $("#jobProgress").classList.add("hidden"); $("#projectStatus").classList.remove("status-highlight"); toast(current.message, true); return; }
       window.setTimeout(poll, 1300);
     } catch (error) { toast(error.message, true); }
   };
