@@ -16,6 +16,8 @@ import os
 import sys
 from pathlib import Path
 
+from pyannote.audio.pipelines.utils.hook import ProgressHook
+
 if sys.platform == "win32":
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -24,6 +26,15 @@ if sys.platform == "win32":
         pass
 
 MODEL_ID = "pyannote/speaker-diarization-3.1"
+
+
+class JsonProgressHook(ProgressHook):
+    def __call__(self, step_name, step_artifact, file=None, total=None, completed=None):
+        super().__call__(step_name, step_artifact, file=file, total=total, completed=completed)
+        total = max(1, int(total or 1))
+        completed = max(0, min(total, int(completed or 0)))
+        print("PROGRESS_JSON " + json.dumps({"step_name": str(step_name), "completed": completed, "total": total}, ensure_ascii=False), flush=True)
+
 
 
 def parse_args() -> argparse.Namespace:
@@ -137,7 +148,8 @@ def main() -> None:
         if args.max_speakers:
             kwargs["max_speakers"] = args.max_speakers
 
-    diarization = pipeline(str(audio), **kwargs)
+    with JsonProgressHook() as hook:
+        diarization = pipeline(str(audio), hook=hook, **kwargs)
     segments = iter_segments(diarization)
     if not segments:
         raise SystemExit("未检测到有效说话人片段；请检查音频文件或音量。")

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>多听工作台 · 带人名逐字稿</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260915-2">
 </head>
 <body>
   <div class="grain"></div>
@@ -44,11 +44,17 @@
         </div>
       </div>
 
+      <section class="job-progress hidden" id="jobProgress" aria-live="polite">
+        <div class="job-progress-top"><strong id="jobProgressLabel">任务执行中</strong><span id="jobProgressPercent">0%</span></div>
+        <div class="job-progress-track"><div class="job-progress-bar" id="jobProgressBar"></div></div>
+      </section>
+
       <section class="delivery-flow">
         <article class="delivery-step" id="recognizeStep">
           <span class="step-num">01</span>
           <div><h2>自动识别</h2><p>本地识别谁在说话，再由公司 qwen3-asr 转写对应发言。</p></div>
           <div class="delivery-action"><span class="mini-status" id="simpleRecognizeStatus">尚未开始</span><button class="primary" id="runPipelineBtn">开始识别</button></div>
+          <div class="speaker-fallback"><label>说话人数兜底<input id="expectedSpeakersEditor" type="number" min="1" max="20" placeholder="识别错时填人数"></label><button class="quiet" id="saveExpectedSpeakersBtn" type="button">保存并用于重跑</button></div>
         </article>
         <article class="delivery-step" id="namingStep">
           <span class="step-num">02</span>
@@ -184,6 +190,6 @@ C035
   </dialog>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260915-2"></script>
 </body>
 </html>

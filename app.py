@@ -135,11 +135,30 @@ def fmt_srt_timestamp(seconds: float) -> str:
     return f"{hour:02d}:{minute:02d}:{second:02d},{ms:03d}"
 
 
+def speaker_display_order(segments: list[dict]) -> list[str]:
+    """按第一次发言时间排序，避免 SPEAKER_00 等内部编号误导人工标注。"""
+    order: list[str] = []
+    for item in sorted(segments, key=lambda x: (float(x.get("start", 0)), float(x.get("end", 0)), str(x.get("speaker", "")))):
+        speaker = str(item.get("speaker", "UNKNOWN"))
+        if speaker not in order:
+            order.append(speaker)
+    return order
+
+
+def friendly_speaker_name(speaker: str, index: int) -> str:
+    return "未知发言人" if speaker == "UNKNOWN" else f"发言人{index + 1}"
+
+
 def make_speaker_map(segments: list[dict], existing: dict[str, Any] | None = None) -> dict[str, dict[str, str]]:
     palette = ["#e05a33", "#1b9aaa", "#d99e28", "#7357d8", "#5f9e5e", "#bc4e84", "#c76f21"]
     mapping = existing or {}
-    for index, speaker in enumerate(sorted({str(item.get("speaker", "UNKNOWN")) for item in segments})):
-        mapping.setdefault(speaker, {"name": speaker, "role": "", "color": palette[index % len(palette)]})
+    for index, speaker in enumerate(speaker_display_order(segments)):
+        default_name = friendly_speaker_name(speaker, index)
+        mapping.setdefault(speaker, {"name": default_name, "role": "", "color": palette[index % len(palette)]})
+        # 兼容旧项目：把 SPEAKER_00 / SPEAKER_01 这类占位名升级为“发言人1”。
+        current_name = str(mapping.get(speaker, {}).get("name", "")).strip()
+        if not current_name or re.fullmatch(r"SPEAKER[_\s-]*\d+", current_name, flags=re.IGNORECASE):
+            mapping[speaker]["name"] = default_name
     return mapping
 
 
@@ -291,7 +310,20 @@ def job_error(job_id: str, exc: Exception) -> None:
     update_job(job_id, status="error", message=str(exc), finished_at=now())
 
 
-def run_diarization(project_id: str, job_id: str, token: str | None, offline: bool = False) -> None:
+def parse_progress_line(line: str) -> dict[str, Any] | None:
+    prefix = "PROGRESS_JSON "
+    if not line.startswith(prefix):
+        return None
+    try:
+        payload = json.loads(line[len(prefix):])
+        total = max(1, int(payload.get("total") or 1))
+        completed = max(0, min(total, int(payload.get("completed") or 0)))
+        return {"step_name": str(payload.get("step_name") or "处理中"), "completed": completed, "total": total}
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+def run_diarization(project_id: str, job_id: str, token: str | None, offline: bool = False, parent_job_id: str | None = None) -> None:
     try:
         update_job(job_id, status="running", message="准备 16 kHz 单声道音频…")
         project = load_project(project_id)
@@ -315,12 +347,38 @@ def run_diarization(project_id: str, job_id: str, token: str | None, offline: bo
         expected = project.get("expected_speakers")
         if expected:
             command.extend(["--num-speakers", str(int(expected))])
-        process = subprocess.run(
+        process = subprocess.Popen(
             command,
-            cwd=str(WORKSPACE), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(WORKSPACE), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", bufsize=1,
         )
+        stdout_parts: list[str] = []
+        stderr_parts: list[str] = []
+
+        def read_stderr() -> None:
+            if process.stderr is not None:
+                stderr_parts.append(process.stderr.read())
+
+        stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+        stderr_thread.start()
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            stdout_parts.append(raw_line)
+            progress = parse_progress_line(raw_line.strip())
+            if not progress:
+                continue
+            total, completed = progress["total"], progress["completed"]
+            percent = round(completed * 100 / total, 1)
+            message = f"Speaker 分离 · {progress['step_name']} · {completed}/{total}（{percent}%）"
+            update_job(job_id, progress=percent, completed=completed, total=total, step=progress["step_name"], message=message)
+            if parent_job_id:
+                update_job(parent_job_id, progress=round(percent * 0.5, 1), message=message)
+        process.wait()
+        stderr_thread.join(timeout=2)
+        stderr_text = "".join(stderr_parts)
+        stdout_text = "".join(stdout_parts)
         if process.returncode != 0:
-            raise RuntimeError(process.stderr[-1800:] or process.stdout[-1800:] or "说话人分离失败")
+            raise RuntimeError(stderr_text[-1800:] or stdout_text[-1800:] or "说话人分离失败")
         diar_file = out / "diarization.json"
         segments = normalize_diarization(read_json(diar_file))
         project = load_project(project_id)
@@ -512,7 +570,7 @@ def speaker_block_cache_key(block: dict[str, Any], language: str | None, model: 
     ])
 
 
-def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | None = "zh") -> None:
+def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | None = "zh", parent_job_id: str | None = None) -> None:
     """qwen3-asr text + local pyannote boundaries, with retry and resume cache."""
     try:
         config = load_asr_config()
@@ -543,9 +601,13 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
             key = speaker_block_cache_key(block, language, model, glossary)
             cached = cache["entries"].get(key) or {}
             text = str(cached.get("text", "")).strip()
+            percent = round(index * 100 / len(blocks), 1)
             if text:
                 cache_hits += 1
-                update_job(job_id, message=f"恢复已完成片段：第 {index}/{len(blocks)} 段（缓存 {cache_hits}）")
+                message = f"恢复已完成片段：第 {index}/{len(blocks)} 段（缓存 {cache_hits}；{percent}%）"
+                update_job(job_id, progress=percent, completed=index, total=len(blocks), message=message)
+                if parent_job_id:
+                    update_job(parent_job_id, progress=round(50 + percent * 0.5, 1), message=message)
             else:
                 duration = block["end"] - block["start"]
                 chunk = chunks_dir / f"speaker_{index:04d}_{block['speaker']}.wav"
@@ -557,7 +619,10 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
                 if command.returncode != 0:
                     raise RuntimeError(command.stderr[-1200:])
                 language_label = language or "自动"
-                update_job(job_id, message=f"qwen3-asr 署名转写（{language_label}）：第 {index}/{len(blocks)} 段；失败自动重试")
+                message = f"qwen3-asr 署名转写（{language_label}）：第 {index}/{len(blocks)} 段；{percent}%；失败自动重试"
+                update_job(job_id, progress=percent, completed=index, total=len(blocks), message=message)
+                if parent_job_id:
+                    update_job(parent_job_id, progress=round(50 + percent * 0.5, 1), message=message)
                 response_segments, text, _ = asr_with_retries(chunk, config, block["start"], language, glossary)
                 if not text.strip() and response_segments:
                     text = " ".join(str(item.get("text", "")) for item in response_segments).strip()
@@ -589,7 +654,7 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
         project["qwen_cache_path"] = str(cache_path)
         project["qwen_cache_hits"] = cache_hits
         save_project(project)
-        update_job(job_id, status="done", message=f"完成：{len(transcript)} 个带 Speaker 文字块；复用缓存 {cache_hits} 段", finished_at=now())
+        update_job(job_id, status="done", progress=100, completed=len(blocks), total=len(blocks), message=f"完成：{len(transcript)} 个带 Speaker 文字块；复用缓存 {cache_hits} 段", finished_at=now())
     except Exception as exc:
         job_error(job_id, exc)
 
@@ -599,18 +664,18 @@ def run_recommended_pipeline(project_id: str, job_id: str, language: str | None 
         update_job(job_id, status="running", message="准备音频并开始本地 Speaker 分离…")
         media_to_wav(load_project(project_id))
         diar_job = create_job(project_id, "diarization_offline")
-        run_diarization(project_id, diar_job, None, True)
+        run_diarization(project_id, diar_job, None, True, parent_job_id=job_id)
         if _jobs[diar_job].get("status") != "done":
             raise RuntimeError(_jobs[diar_job].get("message", "Speaker 分离失败"))
-        update_job(job_id, message="Speaker 分离完成，开始按 Speaker 片段调用 qwen3-asr…")
+        update_job(job_id, progress=50, message="Speaker 分离完成，开始按 Speaker 片段调用 qwen3-asr…")
         qwen_job = create_job(project_id, "asr_qwen3_speaker_aware")
-        run_qwen_speaker_aware_asr(project_id, qwen_job, language)
+        run_qwen_speaker_aware_asr(project_id, qwen_job, language, parent_job_id=job_id)
         if _jobs[qwen_job].get("status") != "done":
             raise RuntimeError(_jobs[qwen_job].get("message", "qwen3-asr 署名转写失败"))
         project = load_project(project_id)
         project["transcript_segments"] = align_segments(project["asr_segments"], project["diarization_segments"])
         save_project(project)
-        update_job(job_id, status="done", message=f"完整识别完成：{len(project['transcript_segments'])} 段带 Speaker 逐字稿", finished_at=now())
+        update_job(job_id, status="done", progress=100, message=f"完整识别完成：{len(project['transcript_segments'])} 段带 Speaker 逐字稿", finished_at=now())
     except Exception as exc:
         job_error(job_id, exc)
 
@@ -1207,6 +1272,22 @@ def get_project(project_id: str):
         return jsonify(public_project(load_project(project_id)))
     except FileNotFoundError:
         return jsonify(error="项目不存在"), 404
+
+
+@app.put("/api/projects/<project_id>/expected-speakers")
+def update_expected_speakers(project_id: str):
+    try:
+        payload = request.get_json(silent=True) or {}
+        raw = str(payload.get("expected_speakers", "")).strip()
+        if not raw.isdigit() or not 1 <= int(raw) <= 20:
+            raise ValueError("说话人数需为 1–20 的整数。")
+        expected = int(raw)
+        project = load_project(project_id)
+        project["expected_speakers"] = expected
+        save_project(project)
+        return jsonify(public_project(project))
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
 
 
 @app.get("/api/projects/<project_id>/media")

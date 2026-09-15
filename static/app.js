@@ -64,6 +64,8 @@ function renderProject() {
   const wantedSrc = `${location.origin}/api/projects/${p.id}/media`;
   if (media.src !== wantedSrc) { media.src = wantedSrc; media.load(); }
   $("#speakerCount").textContent = `${Object.keys(p.speaker_map || {}).length} 位说话人`;
+  const expectedInput = $("#expectedSpeakersEditor");
+  if (expectedInput && document.activeElement !== expectedInput) expectedInput.value = p.expected_speakers || "";
   $("#diarStatus").textContent = hasDiar ? `${p.diarization_segments.length} 个时间片段` : "尚未运行";
   $("#asrStatus").textContent = p.asr_segments?.length ? `${p.asr_segments.length} 个文字片段 · ${p.asr_timing_quality === "coarse" ? "不可可靠对齐" : "可对齐"}` : "等待 qwen3-asr";
   $("#alignStatus").textContent = hasTranscript ? `${p.transcript_segments.length} 段已对齐` : "等待结果";
@@ -95,13 +97,19 @@ function speakerStats(speaker) {
 function renderSpeakers() {
   const list = $("#speakerList");
   const mapping = state.project.speaker_map || {};
-  list.innerHTML = Object.entries(mapping).map(([id, info]) => {
+  const orderedSpeakers = [...(state.project.diarization_segments || [])]
+    .sort((a, b) => (a.start || 0) - (b.start || 0) || (a.end || 0) - (b.end || 0));
+  const firstSeen = new Map();
+  orderedSpeakers.forEach((item) => { if (!firstSeen.has(item.speaker)) firstSeen.set(item.speaker, firstSeen.size + 1); });
+  const speakers = Object.keys(mapping).sort((a, b) => (firstSeen.get(a) || 9999) - (firstSeen.get(b) || 9999));
+  list.innerHTML = speakers.map((id) => {
+    const info = mapping[id];
     const stats = speakerStats(id);
     const cue = stats.longest ? `代表片段 ${time(stats.longest.start)} – ${time(stats.longest.end)}` : "暂无有效语音片段";
     const duration = stats.duration ? `累计 ${Math.round(stats.duration)} 秒` : "暂无时长";
     return `
       <article class="speaker-card" style="--speaker-color:${escapeHtml(info.color || "#777")}">
-        <div class="speaker-head"><strong>${escapeHtml(id)}</strong><span>${escapeHtml(duration)}</span></div>
+        <div class="speaker-head"><strong>${escapeHtml(speakerLabel(id))}</strong><span>${escapeHtml(duration)}</span></div>
         <label>姓名<input data-speaker="${escapeHtml(id)}" data-field="name" value="${escapeHtml(info.name || id)}"></label>
         <label>角色<input data-speaker="${escapeHtml(id)}" data-field="role" value="${escapeHtml(info.role || "")}" placeholder="例如：采访者"></label>
         <p class="speaker-excerpt">“${escapeHtml(stats.excerpt)}”</p>
@@ -160,14 +168,27 @@ async function refreshProject() {
   renderProject();
 }
 
+function renderJobProgress(job) {
+  const panel = $("#jobProgress");
+  if (!panel) return;
+  const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));
+  const running = job.status === "running" || job.status === "queued";
+  panel.classList.toggle("hidden", !running);
+  if (!running) return;
+  $("#jobProgressLabel").textContent = job.message || job.status;
+  $("#jobProgressPercent").textContent = progress.toFixed(1) + "%";
+  $("#jobProgressBar").style.width = progress + "%";
+}
+
 function jobStatus(job, onDone = refreshProject) {
   const jobId = job.id;
   const poll = async () => {
     try {
-      const current = await api(`/api/jobs/${jobId}`);
+      const current = await api("/api/jobs/" + jobId);
       $("#projectStatus").textContent = current.message || current.status;
-      if (current.status === "done") { toast(current.message); await onDone(); return; }
-      if (current.status === "error") { toast(current.message, true); return; }
+      renderJobProgress(current);
+      if (current.status === "done") { $("#jobProgress").classList.add("hidden"); toast(current.message); await onDone(); return; }
+      if (current.status === "error") { $("#jobProgress").classList.add("hidden"); toast(current.message, true); return; }
       window.setTimeout(poll, 1300);
     } catch (error) { toast(error.message, true); }
   };
@@ -312,6 +333,16 @@ $("#saveSettingsBtn").onclick = (event) => { event.preventDefault(); saveModelSe
 $("#generateMinutesBtn").onclick = generateReport;
 $("#generateMinutesAdvancedBtn").onclick = generateReport;
 $("#saveGlossaryBtn").onclick = saveGlossary;
+async function updateExpectedSpeakers() {
+  try {
+    const value = $("#expectedSpeakersEditor").value.trim();
+    if (!value) throw new Error("请先输入说话人数。");
+    state.project = await api(`/api/projects/${state.project.id}/expected-speakers`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expected_speakers:value})});
+    renderProject();
+    toast(`已保存说话人数：${value}。重新运行识别后会按该数量兜底。`);
+  } catch (error) { toast(error.message, true); }
+}
+$("#saveExpectedSpeakersBtn").onclick = updateExpectedSpeakers;
 $("#newProjectBtn").onclick = openProjectDialog;
 $("#emptyImportBtn").onclick = openProjectDialog;
 $("#loadDemoBtn").onclick = loadDemo; $("#emptyDemoBtn").onclick = loadDemo;
