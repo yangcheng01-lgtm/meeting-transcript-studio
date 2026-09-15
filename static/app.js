@@ -39,7 +39,7 @@ function unresolvedSpeakers(project) {
   const referenced = new Set((project?.transcript_segments || []).map((item) => item.speaker).filter((speaker) => speaker && speaker !== "UNKNOWN"));
   return [...referenced].filter((speaker) => {
     const name = String(project?.speaker_map?.[speaker]?.name || "").trim();
-    return !name || name === speaker || /^SPEAKER[_\s-]*\d+$/i.test(name);
+    return !name || name === speaker || /^SPEAKER[_\s-]*\d+$/i.test(name) || /^发言人\d+$/.test(name);
   });
 }
 
@@ -360,7 +360,7 @@ $("#saveTranscriptBtn").onclick = saveTranscript;
 async function exportTranscript() {
   try {
     const missing = unresolvedSpeakers(state.project);
-    if (missing.length) throw new Error(`请先为以下 Speaker 填写人名或角色：${missing.join("、")}`);
+    if (missing.length) throw new Error(`请先为以下发言人填写人名或角色：${missing.map(speakerLabel).join("、")}`);
     await saveTranscript();
     const links = await api(`/api/projects/${state.project.id}/export`, {method:"POST"});
     toast("已生成带时间戳和人名的逐字稿：Markdown、TXT、SRT。");

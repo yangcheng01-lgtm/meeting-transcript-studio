@@ -947,15 +947,15 @@ def render_exports(project: dict[str, Any]) -> dict[str, Path]:
     unresolved = []
     for speaker in sorted({str(item.get("speaker", "UNKNOWN")) for item in segments if str(item.get("speaker", "UNKNOWN")) != "UNKNOWN"}):
         name = str(project.get("speaker_map", {}).get(speaker, {}).get("name", "")).strip()
-        if not name or name == speaker or re.fullmatch(r"SPEAKER[_\s-]*\d+", name, flags=re.IGNORECASE):
+        if not name or name == speaker or re.fullmatch(r"SPEAKER[_\s-]*\d+", name, flags=re.IGNORECASE) or re.fullmatch(r"发言人\d+", name):
             unresolved.append(speaker)
     if unresolved:
-        raise ValueError(f"请先在“确认人名”中填写：{'、'.join(unresolved)}。")
+        raise ValueError(f"请先在“确认人名”中填写：{'、'.join(speaker_label(project, speaker) for speaker in unresolved)}。")
     export_dir = project_dir(project["id"]) / "exports"
     export_dir.mkdir(exist_ok=True)
     slug = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", project.get("title", "逐字稿"))[:60] or "逐字稿"
     md_path, txt_path, srt_path = export_dir / f"{slug}_带署名逐字稿.md", export_dir / f"{slug}_带署名逐字稿.txt", export_dir / f"{slug}_带署名逐字稿.srt"
-    md = [f"# {project.get('title', '逐字稿')} — 带署名逐字稿", "", f"- 生成时间：{now()}", "- 注：SPEAKER 标签由本地 pyannote 说话人分离生成；姓名/角色由人工确认。", ""]
+    md = [f"# {project.get('title', '逐字稿')} — 带署名逐字稿", "", f"- 生成时间：{now()}", "- 注：说话人边界由本地 pyannote 分离生成；姓名/角色由人工确认。", ""]
     txt, srt = [], []
     for index, item in enumerate(segments, 1):
         label = speaker_label(project, item["speaker"])
