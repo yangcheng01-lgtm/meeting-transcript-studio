@@ -63,9 +63,10 @@ function renderProject() {
   const media = $("#audioPlayer");
   const wantedSrc = `${location.origin}/api/projects/${p.id}/media`;
   if (media.src !== wantedSrc) { media.src = wantedSrc; media.load(); }
-  $("#speakerCount").textContent = `${Object.keys(p.speaker_map || {}).length} 位说话人`;
-  const expectedInput = $("#expectedSpeakersEditor");
-  if (expectedInput && document.activeElement !== expectedInput) expectedInput.value = p.expected_speakers || "";
+  const speakerTotal = Object.keys(p.speaker_map || {}).length;
+  $("#speakerCount").textContent = `${speakerTotal} 位说话人`;
+  const speakerSummary = $("#detectedSpeakerCount");
+  if (speakerSummary) speakerSummary.textContent = `系统识别到 ${speakerTotal} 位说话人`;
   $("#diarStatus").textContent = hasDiar ? `${p.diarization_segments.length} 个时间片段` : "尚未运行";
   $("#asrStatus").textContent = p.asr_segments?.length ? `${p.asr_segments.length} 个文字片段 · ${p.asr_timing_quality === "coarse" ? "不可可靠对齐" : "可对齐"}` : "等待 qwen3-asr";
   $("#alignStatus").textContent = hasTranscript ? `${p.transcript_segments.length} 段已对齐` : "等待结果";
@@ -333,16 +334,28 @@ $("#saveSettingsBtn").onclick = (event) => { event.preventDefault(); saveModelSe
 $("#generateMinutesBtn").onclick = generateReport;
 $("#generateMinutesAdvancedBtn").onclick = generateReport;
 $("#saveGlossaryBtn").onclick = saveGlossary;
-async function updateExpectedSpeakers() {
-  try {
-    const value = $("#expectedSpeakersEditor").value.trim();
-    if (!value) throw new Error("请先输入说话人数。");
-    state.project = await api(`/api/projects/${state.project.id}/expected-speakers`, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expected_speakers:value})});
-    renderProject();
-    toast(`已保存说话人数：${value}。重新运行识别后会按该数量兜底。`);
-  } catch (error) { toast(error.message, true); }
+async function openSpeakerCorrectionDialog() {
+  const count = Object.keys(state.project?.speaker_map || {}).length;
+  const summary = $("#speakerCorrectionSummary");
+  if (summary) summary.textContent = `系统当前识别到 ${count} 位说话人。`;
+  const input = $("#actualSpeakerCountInput");
+  input.value = state.project?.expected_speakers || count || "";
+  $("#speakerCorrectionDialog").showModal();
 }
-$("#saveExpectedSpeakersBtn").onclick = updateExpectedSpeakers;
+async function correctSpeakerCount() {
+  try {
+    const value = $("#actualSpeakerCountInput").value.trim();
+    if (!value) throw new Error("请填写实际说话人数。");
+    $("#confirmSpeakerCorrectionBtn").disabled = true;
+    const job = await api(`/api/projects/${state.project.id}/process/correct-speakers`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({expected_speakers:value})});
+    $("#speakerCorrectionDialog").close();
+    toast(`已按 ${value} 位说话人重新分离，请稍候。`);
+    jobStatus(job);
+  } catch (error) { toast(error.message, true); }
+  finally { $("#confirmSpeakerCorrectionBtn").disabled = false; }
+}
+$("#openSpeakerCorrectionBtn").onclick = openSpeakerCorrectionDialog;
+$("#confirmSpeakerCorrectionBtn").onclick = (event) => { event.preventDefault(); correctSpeakerCount().catch((error)=>toast(error.message,true)); };
 $("#newProjectBtn").onclick = openProjectDialog;
 $("#emptyImportBtn").onclick = openProjectDialog;
 $("#loadDemoBtn").onclick = loadDemo; $("#emptyDemoBtn").onclick = loadDemo;

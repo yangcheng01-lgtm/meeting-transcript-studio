@@ -680,6 +680,39 @@ def run_recommended_pipeline(project_id: str, job_id: str, language: str | None 
         job_error(job_id, exc)
 
 
+def run_speaker_count_correction(project_id: str, job_id: str) -> None:
+    """按人工确认的人数重跑 Speaker 分离；如已有逐字稿且模型可用，则同步更新署名。"""
+    try:
+        update_job(job_id, status="running", message="准备按人工确认的人数重新分离说话人…")
+        media_to_wav(load_project(project_id))
+        diar_job = create_job(project_id, "diarization_correction")
+        run_diarization(project_id, diar_job, None, True, parent_job_id=job_id)
+        if _jobs[diar_job].get("status") != "done":
+            raise RuntimeError(_jobs[diar_job].get("message", "说话人分离失败"))
+
+        project = load_project(project_id)
+        if not (project.get("transcript_segments") or project.get("asr_segments")):
+            update_job(job_id, status="done", progress=100, message="说话人已修正；尚未生成逐字稿，可点击“开始识别”继续。", finished_at=now())
+            return
+
+        config = load_asr_config()
+        if not config.get("api_key"):
+            update_job(job_id, status="done", progress=100, message="说话人已修正；未检测到 API Key，请配置模型后重新识别更新逐字稿。", finished_at=now())
+            return
+
+        update_job(job_id, progress=50, message="说话人已修正，正在更新逐字稿署名…")
+        qwen_job = create_job(project_id, "asr_qwen3_speaker_aware")
+        run_qwen_speaker_aware_asr(project_id, qwen_job, None, parent_job_id=job_id)
+        if _jobs[qwen_job].get("status") != "done":
+            raise RuntimeError(_jobs[qwen_job].get("message", "逐字稿署名更新失败"))
+        project = load_project(project_id)
+        project["transcript_segments"] = align_segments(project["asr_segments"], project["diarization_segments"])
+        save_project(project)
+        update_job(job_id, status="done", progress=100, message=f"说话人已修正：{len(project['transcript_segments'])} 段逐字稿已更新", finished_at=now())
+    except Exception as exc:
+        job_error(job_id, exc)
+
+
 def run_local_asr(project_id: str, job_id: str, language: str | None = "zh") -> None:
     """MVP 本地时间戳 ASR：faster-whisper small / CPU int8。"""
     try:
@@ -1383,6 +1416,26 @@ def start_route_a_asr(project_id: str):
     job_id = create_job(project_id, "asr_qwen3")
     threading.Thread(target=run_route_a_asr, args=(project_id, job_id, language), daemon=True).start()
     return jsonify(_jobs[job_id]), 202
+
+
+@app.post("/api/projects/<project_id>/process/correct-speakers")
+def start_speaker_count_correction(project_id: str):
+    try:
+        payload = request.get_json(silent=True) or {}
+        raw = str(payload.get("expected_speakers", "")).strip()
+        if not raw.isdigit() or not 1 <= int(raw) <= 20:
+            return jsonify(error="实际说话人数需为 1–20 的整数。"), 400
+        expected = int(raw)
+        project = load_project(project_id)
+        project["expected_speakers"] = expected
+        save_project(project)
+        job_id = create_job(project_id, "speaker_count_correction")
+        threading.Thread(target=run_speaker_count_correction, args=(project_id, job_id), daemon=True).start()
+        return jsonify(_jobs[job_id]), 202
+    except FileNotFoundError:
+        return jsonify(error="项目不存在"), 404
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
 
 
 @app.post("/api/projects/<project_id>/process/full-pipeline")

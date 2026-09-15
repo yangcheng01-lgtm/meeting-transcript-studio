@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>多听工作台 · 带人名逐字稿</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260915-2">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260915-3">
 </head>
 <body>
   <div class="grain"></div>
@@ -54,7 +54,6 @@
           <span class="step-num">01</span>
           <div><h2>自动识别</h2><p>本地识别谁在说话，再由公司 qwen3-asr 转写对应发言。</p></div>
           <div class="delivery-action"><span class="mini-status" id="simpleRecognizeStatus">尚未开始</span><button class="primary" id="runPipelineBtn">开始识别</button></div>
-          <div class="speaker-fallback"><label>说话人数兜底<input id="expectedSpeakersEditor" type="number" min="1" max="20" placeholder="识别错时填人数"></label><button class="quiet" id="saveExpectedSpeakersBtn" type="button">保存并用于重跑</button></div>
         </article>
         <article class="delivery-step" id="namingStep">
           <span class="step-num">02</span>
@@ -97,6 +96,7 @@ C035
       <section class="workbench">
         <aside class="people-panel">
           <div class="panel-heading"><span>第 2 步：确认人名</span><em id="speakerCount">0 SPEAKERS</em></div>
+          <div class="speaker-summary-row"><span id="detectedSpeakerCount">系统识别到 0 位说话人</span><button class="quiet" id="openSpeakerCorrectionBtn" type="button">修正说话人数</button></div>
           <p class="panel-note">依次试听代表片段、阅读代表发言，然后填写姓名或角色。未命名 Speaker 不能导出最终逐字稿。</p>
           <div id="speakerList" class="speaker-list"></div>
           <button class="quiet full" id="saveSpeakersBtn">保存人物标记</button>
@@ -162,6 +162,18 @@ C035
     </form>
   </dialog>
 
+  <dialog id="speakerCorrectionDialog">
+    <form method="dialog" class="dialog-card compact" id="speakerCorrectionForm">
+      <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
+      <div class="eyebrow">SPEAKER COUNT</div>
+      <h2>修正说话人数</h2>
+      <p id="speakerCorrectionSummary">系统当前识别到 0 位说话人。</p>
+      <label>实际说话人数<input id="actualSpeakerCountInput" type="number" min="1" max="20" step="1"></label>
+      <div class="dialog-hint">重新分离会更新说话人时间线和署名；已完成且未变化的语音文字会尽量复用缓存。请基于试听或代表内容确认人数。</div>
+      <div class="dialog-actions"><button class="quiet" value="cancel">取消</button><button class="primary" id="confirmSpeakerCorrectionBtn" value="default">重新分离说话人</button></div>
+    </form>
+  </dialog>
+
   <dialog id="settingsDialog">
     <form method="dialog" class="dialog-card compact" id="settingsForm">
       <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
@@ -190,6 +202,6 @@ C035
   </dialog>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="{{ url_for('static', filename='app.js') }}?v=20260915-2"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260915-3"></script>
 </body>
 </html>
