@@ -80,7 +80,7 @@ function renderProject() {
   $("#generateMinutesBtn").disabled = !hasTranscript || Boolean(missingNames.length);
   $("#generateMinutesAdvancedBtn").disabled = !hasTranscript || Boolean(missingNames.length);
   const saveSpeakersBtn = $("#saveSpeakersBtn");
-  saveSpeakersBtn.classList.toggle("action-highlight", hasDiar && Boolean(missingNames.length));
+  saveSpeakersBtn.classList.toggle("action-highlight", hasDiar);
   $("#generateMinutesBtn").classList.toggle("action-highlight", hasTranscript && !missingNames.length);
   $("#referenceText").textContent = p.reference_text || p.asr_raw_text || "尚未导入纯文字稿。";
   if ($("#glossaryInput")) $("#glossaryInput").value = (p.glossary || []).join("\n");
@@ -252,14 +252,19 @@ async function generateReport() {
   try {
     const missing = unresolvedSpeakers(state.project);
     if (!state.project?.transcript_segments?.length) throw new Error("请先完成识别，再生成总结报告。");
-    if (missing.length) throw new Error(`请先填写以下发言人的姓名：${missing.map(speakerLabel).join("、")}；角色可留空`);
+    if (missing.length) throw new Error(`请先确认以下发言人：${missing.map(speakerLabel).join("、")}；可直接使用默认姓名，也可改成真实姓名`);
     const skill = $("#summarySkillSelect")?.value || "meeting-minutes-synthesis-zh";
+    const job = await api(`/api/projects/${state.project.id}/generate-report`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({skill})});
     toast("正在生成总结报告；长逐字稿会自动分段提取后汇总。");
-    const result = await api(`/api/projects/${state.project.id}/generate-report`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({skill})});
-    toast(`${result.title}已生成：${result.model} · ${result.llm_requests} 次模型请求`);
-    window.open(result.path, "_blank");
-    await refreshProject();
+    jobStatus(job, async () => {
+      await refreshProject();
+      if (state.project?.latest_report_skill) window.open(`/api/projects/${state.project.id}/download/report/${encodeURIComponent(state.project.latest_report_skill)}`);
+    });
   } catch (error) { toast(error.message, true); }
+}
+
+function toggleResultExportMenu() {
+  $("#resultExportMenu").classList.toggle("hidden");
 }
 
 async function saveGlossary() {
@@ -299,7 +304,7 @@ function saveSpeakers() {
   const map = structuredClone(state.project.speaker_map || {});
   document.querySelectorAll("#speakerList input").forEach((input) => { map[input.dataset.speaker][input.dataset.field] = input.value.trim(); });
   api(`/api/projects/${state.project.id}/speakers`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({speaker_map:map})})
-    .then((project) => {state.project=project;renderProject();toast("人物标记已保存。");}).catch((e)=>toast(e.message,true));
+    .then((project) => {state.project=project;renderProject();toast("人物标记已确认。");}).catch((e)=>toast(e.message,true));
 }
 
 function collectTranscript() {
@@ -337,6 +342,8 @@ $("#llmModelSelect").onchange = () => { if ($("#llmModelSelect").value) $("#llmM
 $("#llmModelInput").oninput = () => { if ($("#llmModelInput").value.trim()) $("#llmModelSelect").value = ""; };
 $("#saveSettingsBtn").onclick = (event) => { event.preventDefault(); saveModelSettings().catch((e) => toast(e.message, true)); };
 $("#generateMinutesBtn").onclick = generateReport;
+$("#resultExportToggle").onclick = toggleResultExportMenu;
+document.addEventListener("click", (event) => { if (!event.target.closest(".result-export")) $("#resultExportMenu").classList.add("hidden"); });
 $("#generateMinutesAdvancedBtn").onclick = generateReport;
 $("#saveGlossaryBtn").onclick = saveGlossary;
 async function openSpeakerCorrectionDialog() {

@@ -32,3 +32,8 @@ dialog{border:0;padding:0;background:transparent;max-width:min(620px,calc(100vw 
 .action-highlight{position:relative;outline:3px solid #35c46f;outline-offset:3px;animation:actionPulse 1.6s ease-in-out infinite}
 .status-highlight{background:#35c46f!important;color:#fff!important;border-color:#35c46f!important}
 @keyframes actionPulse{0%,100%{box-shadow:0 0 0 rgba(53,196,111,.12)}50%{box-shadow:0 0 18px rgba(53,196,111,.55)}}
+
+.result-export{position:relative}
+.result-export-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;background:#fff;border:1px solid var(--ink);box-shadow:4px 4px 0 rgba(20,20,22,.18);display:grid;min-width:210px}
+.result-export-menu button{padding:10px 12px;text-align:left;background:#fff;font-size:13px;font-weight:700}
+.result-export-menu button:hover{background:var(--orange);color:#fff}

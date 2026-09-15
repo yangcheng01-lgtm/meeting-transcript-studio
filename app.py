@@ -1092,11 +1092,20 @@ def generate_and_save_report(project_id: str, skill_id: str) -> dict[str, Any]:
 
 @app.post("/api/projects/<project_id>/generate-report")
 def generate_report(project_id: str):
-    try:
-        payload = request.get_json(silent=True) or {}
-        return jsonify(generate_and_save_report(project_id, str(payload.get("skill") or DEFAULT_SUMMARY_SKILL)))
-    except Exception as exc:
-        return jsonify(error=f"生成总结报告失败：{exc}"), 400
+    payload = request.get_json(silent=True) or {}
+    skill_id = str(payload.get("skill") or DEFAULT_SUMMARY_SKILL)
+    job_id = create_job(project_id, "summary_report")
+
+    def worker() -> None:
+        try:
+            update_job(job_id, status="running", progress=5, message="准备生成总结报告…")
+            result = generate_and_save_report(project_id, skill_id)
+            update_job(job_id, status="done", progress=100, result=result, message=f"总结报告已生成：{result['title']}", finished_at=now())
+        except Exception as exc:
+            job_error(job_id, exc)
+
+    threading.Thread(target=worker, daemon=True).start()
+    return jsonify(_jobs[job_id]), 202
 
 
 @app.post("/api/projects/<project_id>/generate-minutes")

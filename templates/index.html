@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>多听工作台 · 带人名逐字稿</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260916-1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260916-2">
 </head>
 <body>
   <div class="grain"></div>
@@ -52,18 +52,18 @@
       <section class="delivery-flow">
         <article class="delivery-step" id="recognizeStep">
           <span class="step-num">01</span>
-          <div><h2>自动识别</h2><p>本地识别谁在说话，再由公司 qwen3-asr 转写对应发言。</p></div>
+          <div><h2>导入与识别</h2><p>导入音频/视频或链接；系统输出说话人时间线和带时间戳文字。</p></div>
           <div class="delivery-action"><span class="mini-status" id="simpleRecognizeStatus">尚未开始</span><button class="primary" id="runPipelineBtn">开始识别</button></div>
         </article>
         <article class="delivery-step" id="namingStep">
           <span class="step-num">02</span>
-          <div><h2>确认人名</h2><p>听代表片段、看代表发言，然后填写姓名或角色。</p></div>
+          <div><h2>确认人物标记</h2><p>试听代表片段、查看代表发言；可使用默认“发言人1”，也可改成真实姓名。</p></div>
           <div class="delivery-action"><span class="mini-status" id="simpleNamingStatus">等待识别完成</span></div>
         </article>
         <article class="delivery-step" id="exportStep">
           <span class="step-num">03</span>
-          <div><h2>导出与总结</h2><p>导出逐字稿，并选择 Skill 生成可审改交付物。</p></div>
-          <div class="delivery-action report-action"><span class="mini-status" id="simpleExportStatus">等待确认人名</span><div class="delivery-buttons"><select id="summarySkillSelect" class="summary-skill" aria-label="总结 Skill"><option value="meeting-minutes-synthesis-zh">会议总结纪要</option></select><button class="quiet" id="generateMinutesBtn">生成总结报告</button><button class="primary" id="simpleExportBtn">导出逐字稿</button></div></div>
+          <div><h2>生成总结</h2><p>选择总结类型，直接生成可审改报告；逐字稿作为结果导出项放在“更多”里。</p></div>
+          <div class="delivery-action report-action"><span class="mini-status" id="simpleExportStatus">等待确认人名</span><div class="delivery-buttons"><select id="summarySkillSelect" class="summary-skill" aria-label="总结类型"><option value="meeting-minutes-synthesis-zh">会议纪要</option></select><button class="primary" id="generateMinutesBtn">生成总结报告</button><div class="result-export"><button class="quiet" type="button" id="resultExportToggle">更多 ▾</button><div class="result-export-menu hidden" id="resultExportMenu"><button type="button" id="simpleExportBtn">导出 Markdown / TXT / SRT</button></div></div></div></div>
         </article>
       </section>
 
@@ -99,7 +99,7 @@ C035
           <div class="speaker-summary-row"><span id="detectedSpeakerCount">系统识别到 0 位说话人</span><button class="quiet" id="openSpeakerCorrectionBtn" type="button">修正说话人数</button></div>
           <p class="panel-note">依次试听代表片段、阅读代表发言，然后填写姓名或角色。未命名 Speaker 不能导出最终逐字稿。</p>
           <div id="speakerList" class="speaker-list"></div>
-          <button class="quiet full" id="saveSpeakersBtn">保存人物标记</button>
+          <button class="primary full" id="saveSpeakersBtn">确认人物标记</button>
           <details class="import-fold">
             <summary>高级：导入已有识别结果</summary>
             <label>说话人 JSON 路径<input id="diarPathInput" placeholder="...\diarization.json"></label>
@@ -120,9 +120,9 @@ C035
           </div>
 
           <div class="transcript-toolbar">
-            <div><span class="eyebrow">第 3 步：导出</span><h2 id="transcriptHeading">等待自动识别</h2></div>
+            <div><span class="eyebrow">第 3 步：结果</span><h2 id="transcriptHeading">等待自动识别</h2></div>
             <div class="toolbar-actions">
-              <button class="quiet" id="generateMinutesAdvancedBtn">生成总结报告</button><button class="primary" id="exportBtn">导出逐字稿</button>
+              <button class="primary" id="generateMinutesAdvancedBtn">生成总结报告</button><button class="quiet" id="exportBtn">导出逐字稿</button>
             </div>
           </div>
           <div id="transcriptNotice" class="notice">完成自动识别后，请先为每位 Speaker 填写姓名或角色，再导出带时间戳逐字稿。</div>
@@ -202,6 +202,6 @@ C035
   </dialog>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="{{ url_for('static', filename='app.js') }}?v=20260916-1"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260916-2"></script>
 </body>
 </html>
