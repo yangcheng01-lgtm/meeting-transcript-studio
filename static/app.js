@@ -247,7 +247,7 @@ async function generateReport() {
   try {
     const missing = unresolvedSpeakers(state.project);
     if (!state.project?.transcript_segments?.length) throw new Error("请先完成识别，再生成总结报告。");
-    if (missing.length) throw new Error(`请先填写以下 Speaker 的姓名或角色：${missing.join("、")}`);
+    if (missing.length) throw new Error(`请先填写以下发言人的姓名：${missing.map(speakerLabel).join("、")}；角色可留空`);
     const skill = $("#summarySkillSelect")?.value || "meeting-minutes-synthesis-zh";
     toast("正在生成总结报告；长逐字稿会自动分段提取后汇总。");
     const result = await api(`/api/projects/${state.project.id}/generate-report`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({skill})});
@@ -373,7 +373,7 @@ $("#saveTranscriptBtn").onclick = saveTranscript;
 async function exportTranscript() {
   try {
     const missing = unresolvedSpeakers(state.project);
-    if (missing.length) throw new Error(`请先为以下发言人填写人名或角色：${missing.map(speakerLabel).join("、")}`);
+    if (missing.length) throw new Error(`请先为以下发言人填写姓名：${missing.map(speakerLabel).join("、")}；角色可留空`);
     await saveTranscript();
     const links = await api(`/api/projects/${state.project.id}/export`, {method:"POST"});
     toast("已生成带时间戳和人名的逐字稿：Markdown、TXT、SRT。");

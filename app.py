@@ -939,7 +939,20 @@ def llm_chat(system: str, user: str, temperature: float = 0.2) -> str:
     return extract_chat_content(response.json())
 
 
+def validate_named_speakers(project: dict[str, Any]) -> None:
+    """总结和导出都要求真实姓名；角色仅是增强信息，不强制填写。"""
+    unresolved = []
+    for speaker in sorted({str(item.get("speaker", "UNKNOWN")) for item in project.get("transcript_segments", []) if str(item.get("speaker", "UNKNOWN")) != "UNKNOWN"}):
+        name = str(project.get("speaker_map", {}).get(speaker, {}).get("name", "")).strip()
+        if not name or name == speaker or re.fullmatch(r"SPEAKER[_\s-]*\d+", name, flags=re.IGNORECASE) or re.fullmatch(r"发言人\d+", name):
+            unresolved.append(speaker)
+    if unresolved:
+        labels = [speaker_label(project, speaker) for speaker in unresolved]
+        raise ValueError(f"请先为以下发言人填写姓名：{'、'.join(labels)}。角色可以留空。")
+
+
 def generate_report_content(project: dict[str, Any], skill_id: str) -> tuple[str, dict[str, str], int]:
+    validate_named_speakers(project)
     transcript = transcript_for_agent(project)
     if len(transcript) <= LLM_DIRECT_CHAR_LIMIT:
         system, user, metadata = llm_report_prompt(project, skill_id, transcript)
