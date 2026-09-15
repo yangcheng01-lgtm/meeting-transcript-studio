@@ -45,4 +45,8 @@ if ($hasOfflineModel) {
 if ([string]::IsNullOrWhiteSpace($env:HF_TOKEN) -and -not [string]::IsNullOrWhiteSpace($Token)) { $env:HF_TOKEN = $Token }
 
 $python = if ($env:VOICEID_PYTHON) { $env:VOICEID_PYTHON } elseif (Test-Path "$PSScriptRoot\.venv\Scripts\python.exe") { "$PSScriptRoot\.venv\Scripts\python.exe" } else { "python" }
+# Speaker 分离必须使用装有 pyannote 的 D:\voiceid31，而不是 Web 应用自己的 Python。
+if ([string]::IsNullOrWhiteSpace($env:VOICEID_PYTHON) -and (Test-Path 'D:\voiceid31\Scripts\python.exe')) {
+  $env:VOICEID_PYTHON = 'D:\voiceid31\Scripts\python.exe'
+}
 & $python "$PSScriptRoot\app.py"
