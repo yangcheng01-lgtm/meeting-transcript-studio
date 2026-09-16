@@ -355,6 +355,14 @@ async function importResult(kind) {
 async function loadDemo() { try { state.project = await api("/api/projects/demo", {method:"POST"}); renderProject(); toast("已打开“新录音 8”示例。") } catch(e){toast(e.message,true)} }
 
 async function openProjectDialog() {
+  try {
+    const projects = await api("/api/projects");
+    const box = $("#existingProjects");
+    if (box) {
+      box.innerHTML = projects.length ? `<div class="existing-title">已有本地项目</div>${projects.map((item) => `<button type="button" class="project-choice" data-project-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.updated_at || "")}</small></button>`).join("")}` : "";
+      box.querySelectorAll("[data-project-id]").forEach((button) => button.onclick = async () => { state.project = await api(`/api/projects/${button.dataset.projectId}`); renderProject(); $("#projectDialog").close(); toast("已切换本地项目。"); });
+    }
+  } catch (_) {}
   $("#projectDialog").showModal();
 }
 $("#settingsBtn").onclick = async () => { await loadModelSettings(); $("#settingsDialog").showModal(); };

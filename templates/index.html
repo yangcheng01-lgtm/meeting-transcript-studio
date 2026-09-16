@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>多听工作台 · 带人名逐字稿</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260916-5">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260916-6">
 </head>
 <body>
   <div class="grain"></div>
@@ -159,6 +159,7 @@ C035
       <input id="mediaFileInput" type="file" multiple accept="audio/*,video/*,.m4a,.wav,.mp3,.mp4,.mov" hidden>
       <label>已有 diarization JSON（可选）<input id="initialDiarInput" placeholder="...\\diarization.json"></label>
       <label>已有纯文字稿（可选，仅作参考）<input id="referenceTextInput" placeholder="...\\transcript.txt"></label>
+      <div id="existingProjects" class="existing-projects"></div>
       <div class="dialog-actions"><button class="quiet" value="cancel">取消</button><button class="primary" id="createProjectBtn" value="default">创建本地项目</button></div>
     </form>
   </dialog>
@@ -203,6 +204,6 @@ C035
   </dialog>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="{{ url_for('static', filename='app.js') }}?v=20260916-5"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260916-6"></script>
 </body>
 </html>
