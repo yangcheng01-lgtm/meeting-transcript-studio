@@ -671,11 +671,17 @@ def run_recommended_pipeline(project_id: str, job_id: str, language: str | None 
     """Recommended sequential pipeline: offline diarization → qwen speaker-aware ASR."""
     try:
         update_job(job_id, status="running", message="正在识别发言人和转写文字…")
-        media_to_wav(load_project(project_id))
-        diar_job = create_job(project_id, "diarization_offline")
-        run_diarization(project_id, diar_job, None, True, parent_job_id=job_id)
-        if _jobs[diar_job].get("status") != "done":
-            raise RuntimeError(_jobs[diar_job].get("message", "识别发言人失败"))
+        project = load_project(project_id)
+        media_to_wav(project)
+        # Reuse existing speaker timeline when possible; only run diarization if absent.
+        has_diarization = bool(project.get("diarization_segments"))
+        if has_diarization:
+            update_job(job_id, progress=10, message="已有发言人识别结果，直接转写文字…")
+        else:
+            diar_job = create_job(project_id, "diarization_offline")
+            run_diarization(project_id, diar_job, None, True, parent_job_id=job_id)
+            if _jobs[diar_job].get("status") != "done":
+                raise RuntimeError(_jobs[diar_job].get("message", "识别发言人失败"))
         update_job(job_id, progress=50, message="发言人识别完成，开始转写文字…")
         qwen_job = create_job(project_id, "asr_qwen3_speaker_aware")
         run_qwen_speaker_aware_asr(project_id, qwen_job, language, parent_job_id=job_id)
