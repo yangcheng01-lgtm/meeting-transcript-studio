@@ -276,17 +276,44 @@ async function saveGlossary() {
   } catch (error) { toast(error.message, true); }
 }
 
+function setupFileDropZone() {
+  const zone = $("#fileDropZone");
+  const input = $("#mediaFileInput");
+  if (!zone || !input) return;
+  zone.onclick = () => input.click();
+  zone.onkeydown = (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); input.click(); } };
+  zone.ondragover = (event) => { event.preventDefault(); zone.classList.add("dragover"); };
+  zone.ondragleave = () => zone.classList.remove("dragover");
+  zone.ondrop = (event) => {
+    event.preventDefault();
+    zone.classList.remove("dragover");
+    input.files = event.dataTransfer.files;
+    renderFileDropZone();
+  };
+  input.onchange = renderFileDropZone;
+}
+function renderFileDropZone() {
+  const zone = $("#fileDropZone");
+  const input = $("#mediaFileInput");
+  if (!zone || !input) return;
+  const count = input.files?.length || 0;
+  const hint = $("#fileDropZoneHint");
+  if (!hint) return;
+  hint.textContent = count ? (count === 1 ? `已选择：${input.files[0].name}` : `已选择 ${count} 个文件`) : "MP3 / WAV / M4A / MP4 / MOV 等常见格式";
+  if (count) zone.classList.add("has-files"); else zone.classList.remove("has-files");
+}
+setupFileDropZone();
+
 async function createFromPath() {
   const title = $("#titleInput")?.value.trim() || "";
   const youtubeUrl = $("#youtubeUrlInput")?.value.trim() || "";
-  const mediaPath = $("#mediaPathInput")?.value.trim() || "";
   const clipStart = $("#youtubeClipStartInput")?.value.trim() || "0";
   const clipDuration = $("#youtubeClipDurationInput")?.value.trim() || "";
   const expectedSpeakers = $("#expectedSpeakersInput")?.value.trim() || "";
   const glossary = $("#projectGlossaryInput")?.value.trim() || "";
   const mediaInput = $("#mediaFileInput");
   const files = mediaInput?.files ? Array.from(mediaInput.files) : [];
-  if (!youtubeUrl && !mediaPath && !files.length) throw new Error("请填写 YouTube 链接、本机路径，或选择一个或多个音频/视频文件。")
+  if (!youtubeUrl && !files.length) throw new Error("请选择或拖拽一个或多个音频/视频文件，或填写 YouTube 链接。")
   let project;
   if (youtubeUrl) {
     project = await api("/api/projects/youtube", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url: youtubeUrl, title, expected_speakers: expectedSpeakers, glossary, clip_start: clipStart, clip_duration: clipDuration})});
@@ -295,7 +322,7 @@ async function createFromPath() {
     files.forEach((file) => form.append("file", file, file.name));
     project = await api("/api/projects/upload", { method: "POST", body: form });
   } else {
-    project = await api("/api/projects", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({title, media_path: mediaPath, expected_speakers: expectedSpeakers, glossary, diarization_path: $("#initialDiarInput")?.value.trim() || "", reference_text_path: $("#referenceTextInput")?.value.trim() || ""})});
+    throw new Error("请选择或拖拽一个或多个音频/视频文件。");
   }
   state.project = project; renderProject(); $("#projectDialog").close(); toast("本地项目已创建。");
 }
@@ -328,13 +355,7 @@ async function importResult(kind) {
 async function loadDemo() { try { state.project = await api("/api/projects/demo", {method:"POST"}); renderProject(); toast("已打开“新录音 8”示例。") } catch(e){toast(e.message,true)} }
 
 async function openProjectDialog() {
-  try {
-    const projects = await api("/api/projects");
-    const box = $("#existingProjects");
-    box.innerHTML = projects.length ? `<div class="existing-title">已有本地项目</div>${projects.map((item) => `<button type="button" class="project-choice" data-project-id="${escapeHtml(item.id)}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.updated_at || "")}</small></button>`).join("")}` : "";
-    box.querySelectorAll("[data-project-id]").forEach((button) => button.onclick = async () => { state.project = await api(`/api/projects/${button.dataset.projectId}`); renderProject(); $("#projectDialog").close(); toast("已切换本地项目。"); });
-    $("#projectDialog").showModal();
-  } catch (error) { toast(error.message, true); }
+  $("#projectDialog").showModal();
 }
 $("#settingsBtn").onclick = async () => { await loadModelSettings(); $("#settingsDialog").showModal(); };
 $("#refreshModelsBtn").onclick = () => readModelList().catch((e) => toast(e.message, true));

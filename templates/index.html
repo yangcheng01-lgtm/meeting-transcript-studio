@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>多听工作台 · 带人名逐字稿</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260916-4">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260916-5">
 </head>
 <body>
   <div class="grain"></div>
@@ -147,17 +147,18 @@ C035
       <h2>导入你的录音</h2>
       <p>优先填写本机绝对路径，文件不会被复制；也可以选择文件上传到本地项目目录。</p>
       <label>项目名称<input id="titleInput" placeholder="例如：越南市场访谈"></label>
-      <label>YouTube 链接（可选）<input id="youtubeUrlInput" type="url" placeholder="https://www.youtube.com/watch?v=... 或 https://youtu.be/..."></label>
       <div class="dialog-hint">填 YouTube 链接后，不需要填写本机路径或选择文件；工具会下载音频到本地项目。演示或测试可只截取 5–600 秒。</div>
       <div class="youtube-clip-row"><label>链接起点（秒）<input id="youtubeClipStartInput" type="number" min="0" step="1" placeholder="0"></label><label>截取时长（秒，可选）<input id="youtubeClipDurationInput" type="number" min="5" max="600" step="1" placeholder="例如 60"></label></div>
       <label>已知说话人数（可选）<input id="expectedSpeakersInput" type="number" min="1" max="20" placeholder="不知道就留空；两人对话可填 2"></label>
       <label>业务术语 / 专有名词（可选）<textarea id="projectGlossaryInput" rows="4" placeholder="每行一个，例如型号、人名、地名、品牌、行业术语"></textarea></label>
-      <label>本机音频 / 视频路径<input id="mediaPathInput" placeholder="D:\\...\\recording.m4a 或 C:\\...\\meeting.mp4"></label>
-      <label>或选择多个媒体文件（按选择顺序合并）<input id="mediaFileInput" type="file" multiple accept="audio/*,video/*,.m4a,.wav,.mp3,.mp4,.mov"></label>
-      <div class="dialog-hint">多文件会按文件名/选择顺序拼成一条会议时间轴；系统会保留每个源文件的起止位置。</div>
+      <div id="fileDropZone" class="file-drop-zone" tabindex="0" role="button" aria-label="选择或拖拽导入音频视频文件">
+        <strong>选择或拖拽音频 / 视频文件</strong>
+        <span>支持多选；文件会按选择顺序合并成一条会议时间轴。</span>
+        <small id="fileDropZoneHint">MP3 / WAV / M4A / MP4 / MOV 等常见格式</small>
+      </div>
+      <input id="mediaFileInput" type="file" multiple accept="audio/*,video/*,.m4a,.wav,.mp3,.mp4,.mov" hidden>
       <label>已有 diarization JSON（可选）<input id="initialDiarInput" placeholder="...\\diarization.json"></label>
       <label>已有纯文字稿（可选，仅作参考）<input id="referenceTextInput" placeholder="...\\transcript.txt"></label>
-      <div id="existingProjects" class="existing-projects"></div>
       <div class="dialog-actions"><button class="quiet" value="cancel">取消</button><button class="primary" id="createProjectBtn" value="default">创建本地项目</button></div>
     </form>
   </dialog>
@@ -202,6 +203,6 @@ C035
   </dialog>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="{{ url_for('static', filename='app.js') }}?v=20260916-4"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260916-5"></script>
 </body>
 </html>

@@ -42,3 +42,11 @@ dialog{border:0;padding:0;background:transparent;max-width:min(620px,calc(100vw 
 
 .delivery-buttons{align-items:stretch}
 .summary-skill{align-self:stretch}
+
+.file-drop-zone{display:grid;place-items:center;gap:5px;min-height:130px;margin:16px 0;padding:18px;border:2px dashed var(--ink);background:#fff;text-align:center;cursor:pointer;transition:border-color .2s ease,background .2s ease,transform .2s ease}
+.file-drop-zone:hover,.file-drop-zone:focus{border-color:var(--orange);background:#fff8f2;transform:translateY(-1px);outline:none}
+.file-drop-zone.dragover{border-color:var(--orange);background:#ffefd9;transform:scale(1.01)}
+.file-drop-zone strong{font:600 17px "Noto Serif SC",serif}
+.file-drop-zone span{font-size:13px;color:var(--muted)}
+.file-drop-zone small{font:500 10px "DM Mono",monospace;color:var(--orange)}
+.file-drop-zone.has-files{border-style:solid;border-color:#35c46f;background:#f1fff5}
