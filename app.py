@@ -632,6 +632,8 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
                 update_job(job_id, progress=percent, completed=index, total=len(blocks), message=message)
                 if parent_job_id:
                     update_job(parent_job_id, progress=round(50 + percent * 0.5, 1), message=message)
+                response_segments = []
+                text = ""
                 try:
                     response_segments, text, _ = asr_with_retries(chunk, config, block["start"], language, glossary)
                 except Exception as seg_exc:
