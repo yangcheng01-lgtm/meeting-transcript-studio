@@ -392,8 +392,17 @@ def run_diarization(project_id: str, job_id: str, token: str | None, offline: bo
 
 
 def load_asr_config() -> dict[str, Any]:
+    # The model settings dialog now owns both LLM and ASR runtime credentials.
+    # If the user has configured an API key in the UI, use it for qwen3-asr as well.
     if _runtime_asr_config.get("api_key"):
         return dict(_runtime_asr_config)
+    if _llm_config.get("api_key"):
+        return {
+            "api_url": f"{normalize_llm_base_url(_llm_config.get('api_url'))}/v1/audio/transcriptions",
+            "api_key": _llm_config["api_key"],
+            "model": os.environ.get("ASR_MODEL", "qwen3-asr"),
+            "language": os.environ.get("ASR_LANGUAGE", "zh"),
+        }
     if ASR_CONFIG.is_file():
         return read_json(ASR_CONFIG)
     return {
