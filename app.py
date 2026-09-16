@@ -554,7 +554,15 @@ def build_speaker_asr_blocks(segments: list[dict], max_duration: float = 18.0, j
             if speaker == previous["speaker"] and start - previous["end"] <= join_gap and merged_duration <= max_duration:
                 previous["end"] = max(previous["end"], end)
                 continue
-        blocks.append({"start": start, "end": end, "speaker": speaker})
+        # Split single long turns that exceed max_duration
+        if end - start > max_duration:
+            sub_start = start
+            while sub_start < end:
+                sub_end = min(sub_start + max_duration, end)
+                blocks.append({"start": sub_start, "end": sub_end, "speaker": speaker})
+                sub_start = sub_end
+        else:
+            blocks.append({"start": start, "end": end, "speaker": speaker})
     return blocks
 
 
