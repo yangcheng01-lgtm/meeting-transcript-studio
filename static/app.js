@@ -67,14 +67,14 @@ function renderProject() {
   const speakerTotal = Object.keys(p.speaker_map || {}).length;
   $("#speakerCount").textContent = `${speakerTotal} 位说话人`;
   const speakerSummary = $("#detectedSpeakerCount");
-  if (speakerSummary) speakerSummary.textContent = `系统识别到 ${speakerTotal} 位说话人`;
-  $("#diarStatus").textContent = hasDiar ? `${p.diarization_segments.length} 个时间片段` : "尚未运行";
+  if (speakerSummary) speakerSummary.textContent = `系统识别到 ${speakerTotal} 位发言人`;
+  $("#diarStatus").textContent = hasDiar ? `${p.diarization_segments.length} 个发言片段` : "尚未识别";
   $("#asrStatus").textContent = p.asr_segments?.length ? `${p.asr_segments.length} 个文字片段 · ${p.asr_timing_quality === "coarse" ? "不可可靠对齐" : "可对齐"}` : "等待 qwen3-asr";
   $("#alignStatus").textContent = hasTranscript ? `${p.transcript_segments.length} 段已对齐` : "等待结果";
-  $("#projectStatus").textContent = hasTranscript ? (missingNames.length ? "待填写人名" : "可生成报告") : hasDiar ? "转写处理中 / 待转写" : "等待处理";
+  $("#projectStatus").textContent = hasTranscript ? (missingNames.length ? "请确认人物标记" : "可生成报告") : hasDiar ? "正在转写文字" : "等待处理";
   $("#runPipelineBtn").textContent = hasTranscript ? "重新识别" : "开始识别";
-  $("#simpleRecognizeStatus").textContent = hasTranscript ? "识别已完成，可重新运行" : hasDiar ? "Speaker 已完成，等待文字" : "导入后点击开始";
-  $("#simpleNamingStatus").textContent = !hasDiar ? "等待识别完成" : missingNames.length ? `还需命名 ${missingNames.length} 位说话人` : "人名已确认";
+  $("#simpleRecognizeStatus").textContent = hasTranscript ? "识别已完成，可重新运行" : hasDiar ? "发言人已识别，等待文字" : "导入后点击开始";
+  $("#simpleNamingStatus").textContent = !hasDiar ? "等待识别完成" : missingNames.length ? `还需确认 ${missingNames.length} 位发言人` : "人物标记已确认";
   $("#simpleExportStatus").textContent = !hasTranscript ? "等待识别完成" : missingNames.length ? "请先填写全部人名" : "可导出";
   $("#simpleExportBtn").disabled = !hasTranscript || Boolean(missingNames.length);
   $("#generateMinutesBtn").disabled = !hasTranscript || Boolean(missingNames.length);
@@ -120,7 +120,7 @@ function renderSpeakers() {
         <p class="speaker-excerpt">“${escapeHtml(stats.excerpt)}”</p>
         <div class="speaker-tools"><small>${escapeHtml(cue)}</small>${stats.longest ? `<button class="speaker-preview-btn" data-preview-speaker="${escapeHtml(id)}">试听代表片段</button>` : ""}</div>
       </article>`;
-  }).join("") || `<p class="panel-note">还没有可标记的 Speaker。先运行或导入说话人分离结果。</p>`;
+  }).join("") || `<p class="panel-note">还没有发言人。请先运行识别或导入发言人时间轴。</p>`;
   list.querySelectorAll("[data-preview-speaker]").forEach((button) => button.addEventListener("click", () => playSpeakerPreview(button.dataset.previewSpeaker)));
 }
 
@@ -252,7 +252,7 @@ async function generateReport() {
   try {
     const missing = unresolvedSpeakers(state.project);
     if (!state.project?.transcript_segments?.length) throw new Error("请先完成识别，再生成总结报告。");
-    if (missing.length) throw new Error(`请先确认以下发言人：${missing.map(speakerLabel).join("、")}；可直接使用默认姓名，也可改成真实姓名`);
+    if (missing.length) throw new Error(`请先确认人物标记，可直接使用默认"发言人1"，也可改成真实姓名`);
     const skill = $("#summarySkillSelect")?.value || "meeting-minutes-synthesis-zh";
     const job = await api(`/api/projects/${state.project.id}/generate-report`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({skill})});
     toast("正在生成总结报告；长逐字稿会自动分段提取后汇总。");
@@ -380,16 +380,16 @@ $("#importAsrBtn").onclick = () => importResult("asr");
 $("#runDiarBtn").onclick = () => $("#tokenDialog").showModal();
 $("#confirmDiarBtn").onclick = async (event) => { event.preventDefault(); const token=$("#hfTokenInput").value.trim(); const offline=$("#offlineModeInput").checked; try{const job=await api(`/api/projects/${state.project.id}/process/diarize`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token, offline})});$("#hfTokenInput").value="";$("#offlineModeInput").checked=false;$("#tokenDialog").close();jobStatus(job)}catch(e){toast(e.message,true)}};
 $("#runAsrBtn").onclick = async () => { try{const language=$("#asrLanguage").value; const job=await api(`/api/projects/${state.project.id}/process/qwen-speaker-aware`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({language})});jobStatus(job)}catch(e){toast(e.message,true)} };
-$("#runPipelineBtn").onclick = async () => { try{const language=$("#asrLanguage").value; const job=await api(`/api/projects/${state.project.id}/process/full-pipeline`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({language})});toast("已开始完整识别：本地 Speaker 分离 → 公司 qwen3-asr 署名转写。 ");jobStatus(job)}catch(e){toast(e.message,true)} };
-$("#alignBtn").onclick = async () => { try{state.project=await api(`/api/projects/${state.project.id}/align`,{method:"POST"});renderProject();toast("已生成带 Speaker 的逐字稿草稿。") }catch(e){toast(e.message,true)} };
+$("#runPipelineBtn").onclick = async () => { try{const language=$("#asrLanguage").value; const job=await api(`/api/projects/${state.project.id}/process/full-pipeline`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({language})});toast("已开始识别：先识别发言人，再转写文字。");jobStatus(job)}catch(e){toast(e.message,true)} };
+$("#alignBtn").onclick = async () => { try{state.project=await api(`/api/projects/${state.project.id}/align`,{method:"POST"});renderProject();toast("已生成带发言人的逐字稿草稿。") }catch(e){toast(e.message,true)} };
 $("#saveTranscriptBtn").onclick = saveTranscript;
 async function exportTranscript() {
   try {
     const missing = unresolvedSpeakers(state.project);
-    if (missing.length) throw new Error(`请先为以下发言人填写姓名：${missing.map(speakerLabel).join("、")}；角色可留空`);
+    if (missing.length) throw new Error(`请确认人物标记，使用默认"发言人1"也可以；角色可留空`);
     await saveTranscript();
     const links = await api(`/api/projects/${state.project.id}/export`, {method:"POST"});
-    toast("已生成带时间戳和人名的逐字稿：Markdown、TXT、SRT。");
+    toast("已导出带时间戳和人名的逐字稿：Markdown、TXT、SRT。");
     Object.values(links).forEach((url, i) => setTimeout(() => window.open(url, "_blank"), i * 250));
   } catch (e) { toast(e.message, true); }
 }

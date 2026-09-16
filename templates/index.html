@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>多听工作台 · 带人名逐字稿</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260916-3">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20260916-4">
 </head>
 <body>
   <div class="grain"></div>
@@ -24,7 +24,7 @@
     <section class="empty-state" id="emptyState">
       <div class="eyebrow">导入一次，交付一份可用逐字稿</div>
       <h1>听清是谁说的，<br>再导出带人名逐字稿。</h1>
-      <p>导入音频或视频，工具自动完成本地 Speaker 分离和公司 qwen3-asr 转写；你只需确认每位说话人的姓名或角色，随后导出。</p>
+      <p>导入音频或视频，系统自动识别发言人和转写文字；你只需确认每位发言人的姓名或角色，随后导出。</p>
       <div class="empty-actions">
         <button class="primary big" id="emptyImportBtn">导入音频 / 视频</button>
         <button class="quiet big" id="emptyDemoBtn">打开“新录音 8”示例</button>
@@ -71,12 +71,12 @@
         <summary>高级操作：单独运行、导入已有结果、查看技术状态</summary>
         <section class="process-panel">
           <div class="process-card" id="diarCard">
-            <div class="step-num">A1</div><div><h2>仅运行 Speaker 分离</h2><p>本地 pyannote 仅生成谁在何时说话的时间线。</p></div>
-            <div class="card-bottom"><span class="mini-status" id="diarStatus">尚未运行</span><button class="action" id="runDiarBtn">仅运行 Speaker</button></div>
+            <div class="step-num">A1</div><div><h2>仅识别发言人</h2><p>只识别谁在何时说话，不生成文字。适合人数识别错误时单独重跑。</p></div>
+            <div class="card-bottom"><span class="mini-status" id="diarStatus">尚未运行</span><button class="action" id="runDiarBtn">仅识别发言人</button></div>
           </div>
           <div class="process-card" id="asrCard">
-            <div class="step-num">A2</div><div><h2>仅运行 qwen3-asr</h2><p>需要已完成 Speaker 分离；按 Speaker 片段转写。</p></div>
-            <div class="card-bottom stacked-actions"><span class="mini-status" id="asrStatus">等待 qwen3-asr</span><div><select id="asrLanguage" class="asr-language" aria-label="qwen3-asr 语言"><option value="zh">中文</option><option value="ko">韩语</option><option value="en">英语</option><option value="auto">自动</option></select><button class="action" id="runAsrBtn">按 Speaker 调用 qwen3-asr</button></div></div>
+            <div class="step-num">A2</div><div><h2>仅转写文字</h2><p>需要已完成发言人识别；按发言人片段逐段转写。</p></div>
+            <div class="card-bottom stacked-actions"><span class="mini-status" id="asrStatus">等待转写</span><div><select id="asrLanguage" class="asr-language" aria-label="qwen3-asr 语言"><option value="zh">中文</option><option value="ko">韩语</option><option value="en">英语</option><option value="auto">自动</option></select><button class="action" id="runAsrBtn">按发言人转写文字</button></div></div>
           </div>
           <div class="process-card">
             <div class="step-num">A3</div><div><h2>重新生成对齐草稿</h2><p>通常“开始识别”会自动完成，无需手动点击。</p></div>
@@ -95,15 +95,15 @@ C035
 
       <section class="workbench">
         <aside class="people-panel">
-          <div class="panel-heading"><span>第 2 步：确认人名</span><em id="speakerCount">0 SPEAKERS</em></div>
+          <div class="panel-heading"><span>第 2 步：确认人名</span><em id="speakerCount">0 位发言人</em></div>
           <div class="speaker-summary-row"><span id="detectedSpeakerCount">系统识别到 0 位说话人</span><button class="quiet" id="openSpeakerCorrectionBtn" type="button">修正说话人数</button></div>
-          <p class="panel-note">依次试听代表片段、阅读代表发言，然后填写姓名或角色。未命名 Speaker 不能导出最终逐字稿。</p>
+          <p class="panel-note">依次试听代表片段、阅读代表发言，然后填写姓名或角色。使用默认"发言人1"也可以导出。</p>
           <div id="speakerList" class="speaker-list"></div>
           <button class="primary full" id="saveSpeakersBtn">确认人物标记</button>
           <details class="import-fold">
             <summary>高级：导入已有识别结果</summary>
             <label>说话人 JSON 路径<input id="diarPathInput" placeholder="...\diarization.json"></label>
-            <button class="text-action" id="importDiarBtn">导入 Speaker 时间轴</button>
+            <button class="text-action" id="importDiarBtn">导入发言人时间轴</button>
             <label>带时间戳 ASR JSON 路径<input id="asrPathInput" placeholder="...\asr_segments.json"></label>
             <button class="text-action" id="importAsrBtn">导入 ASR 时间轴</button>
           </details>
@@ -125,7 +125,7 @@ C035
               <button class="primary" id="generateMinutesAdvancedBtn">生成总结报告</button><button class="quiet" id="exportBtn">导出逐字稿</button>
             </div>
           </div>
-          <div id="transcriptNotice" class="notice">完成自动识别后，请先为每位 Speaker 填写姓名或角色，再导出带时间戳逐字稿。</div>
+          <div id="transcriptNotice" class="notice">完成自动识别后，请确认每位发言人，再导出带时间戳逐字稿。</div>
           <details class="transcript-fold" id="transcriptFold">
             <summary>校对逐字稿（可选，但建议检查专有名词、数字和人名）</summary>
             <div class="transcript-tools"><button class="quiet" id="saveTranscriptBtn">保存文字修改</button></div>
@@ -166,11 +166,11 @@ C035
     <form method="dialog" class="dialog-card compact" id="speakerCorrectionForm">
       <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
       <div class="eyebrow">SPEAKER COUNT</div>
-      <h2>修正说话人数</h2>
-      <p id="speakerCorrectionSummary">系统当前识别到 0 位说话人。</p>
+      <h2>修正发言人人数</h2>
+      <p id="speakerCorrectionSummary">系统当前识别到 0 位发言人。</p>
       <label>实际说话人数<input id="actualSpeakerCountInput" type="number" min="1" max="20" step="1"></label>
-      <div class="dialog-hint">重新分离会更新说话人时间线和署名；已完成且未变化的语音文字会尽量复用缓存。请基于试听或代表内容确认人数。</div>
-      <div class="dialog-actions"><button class="quiet" value="cancel">取消</button><button class="primary" id="confirmSpeakerCorrectionBtn" value="default">重新分离说话人</button></div>
+      <div class="dialog-hint">重新识别会更新发言人时间线和文字署名；已完成的文字会尽量复用缓存，不会重复消耗。</div>
+      <div class="dialog-actions"><button class="quiet" value="cancel">取消</button><button class="primary" id="confirmSpeakerCorrectionBtn" value="default">重新识别发言人</button></div>
     </form>
   </dialog>
 
@@ -179,7 +179,7 @@ C035
       <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
       <div class="eyebrow">MODEL CONNECTION</div>
       <h2>模型设置</h2>
-      <p>API Key 只保存在当前工作台进程内存中，同时用于 qwen3-asr 转写和总结模型；不写入项目文件、浏览器存储或导出文件。重启工作台后需要重新填写。</p>
+      <p>API Key 只保存在当前进程内存中，同时用于文字转写和总结生成；不写入文件或导出结果。重启后需重新填写。</p>
       <label>API URL<input id="llmApiUrlInput" value="https://ai-service.segway-ninebot.com" placeholder="https://ai-service.segway-ninebot.com"></label>
       <label>API Key<input id="llmApiKeyInput" type="password" placeholder="填写你自己的 API Key"></label>
       <div class="model-row"><label>模型<select id="llmModelSelect"><option value="external/glm-5.3-flash">external/glm-5.3-flash · 低倍率默认</option><option value="external/glm-5.3">external/glm-5.3 · 质量增强</option><option value="external/qwen3.7-plus">external/qwen3.7-plus · 长文低倍率</option><option value="external/gpt-5.6-luna">external/gpt-5.6-luna · 复杂任务</option></select></label><button type="button" class="quiet model-refresh" id="refreshModelsBtn">读取模型列表</button></div>
@@ -193,15 +193,15 @@ C035
     <form method="dialog" class="dialog-card compact" id="tokenForm">
       <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
       <div class="eyebrow">HF ACCESS TOKEN</div>
-      <h2>仅用于本次 speaker 分离</h2>
+      <h2>仅用于本次发言人识别</h2>
       <p>若工作台启动时已设置 <code>HF_TOKEN</code>，本字段可留空并默认使用它；无论哪种方式，token 都不会写入项目文件或浏览器存储。</p>
-      <label>临时覆盖的 Hugging Face Token（可留空）<input id="hfTokenInput" type="password" placeholder="留空 = 使用默认 HF_TOKEN"></label>
-      <label class="offline-check"><input id="offlineModeInput" type="checkbox"> 使用已缓存模型离线运行（不访问 Hugging Face，也不需要 token）</label>
+      <label>Hugging Face Token（可留空）<input id="hfTokenInput" type="password" placeholder="留空 = 使用默认 HF_TOKEN"></label>
+      <label class="offline-check"><input id="offlineModeInput" type="checkbox"> 使用已缓存模型离线运行（不需要 Token）</label>
       <div class="dialog-actions"><button class="quiet" value="cancel">取消</button><button class="primary" id="confirmDiarBtn" value="default">开始识别</button></div>
     </form>
   </dialog>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="{{ url_for('static', filename='app.js') }}?v=20260916-3"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20260916-4"></script>
 </body>
 </html>

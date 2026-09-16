@@ -340,7 +340,7 @@ def run_diarization(project_id: str, job_id: str, token: str | None, offline: bo
         local_pyannote_cache = DATA_ROOT / "model-cache" / "torch" / "pyannote"
         if local_pyannote_cache.is_dir():
             env.setdefault("PYANNOTE_CACHE", str(local_pyannote_cache))
-        update_job(job_id, message="pyannote 正在做全局说话人分离…")
+        update_job(job_id, message="正在识别发言人…")
         command = [str(VOICEID_PYTHON), str(DIARIZE_SCRIPT), str(audio), "-o", str(out)]
         if offline:
             command.append("--offline")
@@ -369,7 +369,7 @@ def run_diarization(project_id: str, job_id: str, token: str | None, offline: bo
                 continue
             total, completed = progress["total"], progress["completed"]
             percent = round(completed * 100 / total, 1)
-            message = f"Speaker 分离 · {progress['step_name']} · {completed}/{total}（{percent}%）"
+            message = f"正在识别发言人 · {progress['step_name']} · {completed}/{total}（{percent}%）"
             update_job(job_id, progress=percent, completed=completed, total=total, step=progress["step_name"], message=message)
             if parent_job_id:
                 update_job(parent_job_id, progress=round(percent * 0.5, 1), message=message)
@@ -378,7 +378,7 @@ def run_diarization(project_id: str, job_id: str, token: str | None, offline: bo
         stderr_text = "".join(stderr_parts)
         stdout_text = "".join(stdout_parts)
         if process.returncode != 0:
-            raise RuntimeError(stderr_text[-1800:] or stdout_text[-1800:] or "说话人分离失败")
+            raise RuntimeError(stderr_text[-1800:] or stdout_text[-1800:] or "识别发言人失败")
         diar_file = out / "diarization.json"
         segments = normalize_diarization(read_json(diar_file))
         project = load_project(project_id)
@@ -386,7 +386,7 @@ def run_diarization(project_id: str, job_id: str, token: str | None, offline: bo
         project["speaker_map"] = make_speaker_map(segments, project.get("speaker_map"))
         project["diarization_source"] = str(diar_file)
         save_project(project)
-        update_job(job_id, status="done", message=f"完成：{len(segments)} 个 speaker 片段", finished_at=now())
+        update_job(job_id, status="done", message=f"发言人识别完成，共 {len(segments)} 个发言片段", finished_at=now())
     except Exception as exc:
         job_error(job_id, exc)
 
@@ -579,14 +579,14 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
         project = load_project(project_id)
         diarization = project.get("diarization_segments", [])
         if not diarization:
-            raise RuntimeError("请先完成本地 Speaker 分离；qwen3-asr 的署名切片依赖 Speaker 时间段。")
-        update_job(job_id, status="running", message="准备按 Speaker 切分的 qwen3-asr 音频片段…")
+            raise RuntimeError("请先识别发言人，才能转写文字。")
+        update_job(job_id, status="running", message="正在按发言人切分音频…")
         audio = media_to_wav(project)
         if not FFMPEG.is_file():
             raise FileNotFoundError(f"未找到 ffmpeg：{FFMPEG}")
         blocks = build_speaker_asr_blocks(diarization)
         if not blocks:
-            raise RuntimeError("Speaker 分离结果中没有可转写的有效发言片段")
+            raise RuntimeError("识别出的发言人时间线中没有可转写的有效发言")
         chunks_dir = project_dir(project_id) / "qwen_speaker_chunks"
         chunks_dir.mkdir(exist_ok=True)
         cache_path = project_dir(project_id) / "qwen_speaker_cache.json"
@@ -619,7 +619,7 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
                 if command.returncode != 0:
                     raise RuntimeError(command.stderr[-1200:])
                 language_label = language or "自动"
-                message = f"qwen3-asr 署名转写（{language_label}）：第 {index}/{len(blocks)} 段；{percent}%；失败自动重试"
+                message = f"正在转写文字（{language_label}）：第 {index}/{len(blocks)} 段，完成 {percent}%，失败自动重试"
                 update_job(job_id, progress=percent, completed=index, total=len(blocks), message=message)
                 if parent_job_id:
                     update_job(parent_job_id, progress=round(50 + percent * 0.5, 1), message=message)
@@ -654,28 +654,28 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
         project["qwen_cache_path"] = str(cache_path)
         project["qwen_cache_hits"] = cache_hits
         save_project(project)
-        update_job(job_id, status="done", progress=100, completed=len(blocks), total=len(blocks), message=f"完成：{len(transcript)} 个带 Speaker 文字块；复用缓存 {cache_hits} 段", finished_at=now())
+        update_job(job_id, status="done", progress=100, completed=len(blocks), total=len(blocks), message=f"转写完成：{len(transcript)} 段文字，复用缓存 {cache_hits} 段", finished_at=now())
     except Exception as exc:
         job_error(job_id, exc)
 
 def run_recommended_pipeline(project_id: str, job_id: str, language: str | None = "zh") -> None:
     """Recommended sequential pipeline: offline diarization → qwen speaker-aware ASR."""
     try:
-        update_job(job_id, status="running", message="准备音频并开始本地 Speaker 分离…")
+        update_job(job_id, status="running", message="正在识别发言人和转写文字…")
         media_to_wav(load_project(project_id))
         diar_job = create_job(project_id, "diarization_offline")
         run_diarization(project_id, diar_job, None, True, parent_job_id=job_id)
         if _jobs[diar_job].get("status") != "done":
-            raise RuntimeError(_jobs[diar_job].get("message", "Speaker 分离失败"))
-        update_job(job_id, progress=50, message="Speaker 分离完成，开始按 Speaker 片段调用 qwen3-asr…")
+            raise RuntimeError(_jobs[diar_job].get("message", "识别发言人失败"))
+        update_job(job_id, progress=50, message="发言人识别完成，开始转写文字…")
         qwen_job = create_job(project_id, "asr_qwen3_speaker_aware")
         run_qwen_speaker_aware_asr(project_id, qwen_job, language, parent_job_id=job_id)
         if _jobs[qwen_job].get("status") != "done":
-            raise RuntimeError(_jobs[qwen_job].get("message", "qwen3-asr 署名转写失败"))
+            raise RuntimeError(_jobs[qwen_job].get("message", "转写文字失败"))
         project = load_project(project_id)
         project["transcript_segments"] = align_segments(project["asr_segments"], project["diarization_segments"])
         save_project(project)
-        update_job(job_id, status="done", progress=100, message=f"完整识别完成：{len(project['transcript_segments'])} 段带 Speaker 逐字稿", finished_at=now())
+        update_job(job_id, status="done", progress=100, message=f"识别完成：{len(project['transcript_segments'])} 段带发言人逐字稿", finished_at=now())
     except Exception as exc:
         job_error(job_id, exc)
 
@@ -683,12 +683,12 @@ def run_recommended_pipeline(project_id: str, job_id: str, language: str | None 
 def run_speaker_count_correction(project_id: str, job_id: str) -> None:
     """按人工确认的人数重跑 Speaker 分离；如已有逐字稿且模型可用，则同步更新署名。"""
     try:
-        update_job(job_id, status="running", message="准备按人工确认的人数重新分离说话人…")
+        update_job(job_id, status="running", message="正在按确认的人数重新识别发言人…")
         media_to_wav(load_project(project_id))
         diar_job = create_job(project_id, "diarization_correction")
         run_diarization(project_id, diar_job, None, True, parent_job_id=job_id)
         if _jobs[diar_job].get("status") != "done":
-            raise RuntimeError(_jobs[diar_job].get("message", "说话人分离失败"))
+            raise RuntimeError(_jobs[diar_job].get("message", "重新识别发言人失败"))
 
         project = load_project(project_id)
         if not (project.get("transcript_segments") or project.get("asr_segments")):
@@ -700,15 +700,15 @@ def run_speaker_count_correction(project_id: str, job_id: str) -> None:
             update_job(job_id, status="done", progress=100, message="说话人已修正；未检测到 API Key，请配置模型后重新识别更新逐字稿。", finished_at=now())
             return
 
-        update_job(job_id, progress=50, message="说话人已修正，正在更新逐字稿署名…")
+        update_job(job_id, progress=50, message="发言人已修正，正在更新逐字稿…")
         qwen_job = create_job(project_id, "asr_qwen3_speaker_aware")
         run_qwen_speaker_aware_asr(project_id, qwen_job, None, parent_job_id=job_id)
         if _jobs[qwen_job].get("status") != "done":
-            raise RuntimeError(_jobs[qwen_job].get("message", "逐字稿署名更新失败"))
+            raise RuntimeError(_jobs[qwen_job].get("message", "更新逐字稿失败"))
         project = load_project(project_id)
         project["transcript_segments"] = align_segments(project["asr_segments"], project["diarization_segments"])
         save_project(project)
-        update_job(job_id, status="done", progress=100, message=f"说话人已修正：{len(project['transcript_segments'])} 段逐字稿已更新", finished_at=now())
+        update_job(job_id, status="done", progress=100, message=f"发言人已修正：{len(project['transcript_segments'])} 段逐字稿已更新", finished_at=now())
     except Exception as exc:
         job_error(job_id, exc)
 

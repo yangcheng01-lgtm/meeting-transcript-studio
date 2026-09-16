@@ -104,7 +104,7 @@ def write_outputs(audio: Path, out_dir: Path, diarization, segments: list[dict])
             minutes, seconds = divmod(round(duration), 60)
             f.write(f"| {speaker} | {minutes}分{seconds:02d}秒 |\n")
 
-    print(f"\n完成：识别到 {len(summary)} 位匿名说话人、{len(segments)} 个发言片段。")
+    print(f"\n发言人识别完成：共 {len(summary)} 位、{len(segments)} 个发言片段。")
     for speaker, duration in sorted(summary.items(), key=lambda item: -item[1]):
         print(f"  {speaker}: {duration:.1f}s")
     print("输出目录：", out_dir.resolve())
@@ -137,7 +137,7 @@ def main() -> None:
     from pyannote.audio import Pipeline
 
     pipeline = Pipeline.from_pretrained(MODEL_ID, use_auth_token=token)
-    print("[2/3] 执行全局说话人分离（CPU；长音频耗时较长）")
+    print("[2/3] 正在识别发言人（长音频需要较长时间）")
 
     kwargs = {}
     if args.num_speakers:
