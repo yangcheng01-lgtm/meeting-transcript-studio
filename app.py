@@ -452,7 +452,7 @@ def asr_request(audio_path: Path, config: dict[str, Any], offset: float, languag
                     headers={"Authorization": f"Bearer {config['api_key']}"},
                     files={"file": (audio_path.name, file, "audio/wav")},
                     data=data,
-                    timeout=300,
+                    timeout=120,
                 )
             # 可选参数不兼容时尝试下一种；网络/认证等错误必须直接暴露。
             if response.status_code in {400, 404, 422}:
@@ -632,7 +632,11 @@ def run_qwen_speaker_aware_asr(project_id: str, job_id: str, language: str | Non
                 update_job(job_id, progress=percent, completed=index, total=len(blocks), message=message)
                 if parent_job_id:
                     update_job(parent_job_id, progress=round(50 + percent * 0.5, 1), message=message)
-                response_segments, text, _ = asr_with_retries(chunk, config, block["start"], language, glossary)
+                try:
+                    response_segments, text, _ = asr_with_retries(chunk, config, block["start"], language, glossary)
+                except Exception as seg_exc:
+                    text = ""
+                    update_job(job_id, message=f"第 {index}/{len(blocks)} 段转写失败（{seg_exc}），跳过继续")
                 if not text.strip() and response_segments:
                     text = " ".join(str(item.get("text", "")) for item in response_segments).strip()
                 text = text.strip()
