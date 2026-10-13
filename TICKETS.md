@@ -17,11 +17,11 @@
 - [x] `test_customer_api.py` 覆盖 API
 - Commit：`33d2148 feat: add customer archive integration and API routes`
 
-## 任务 3：多文件逐字稿合并（进行中）
-- [ ] 每个文件单独说话人分离
-- [ ] 按上传顺序合并时间线，时间戳累计偏移
-- [ ] 跨文件人名合并去重
-- 说明：当前 `media_to_wav` 已经把多媒体文件 concat 成一条 WAV，说话人分离天然在同一时间轴上；需要检查的是人名合并和跨文件展示
+## 任务 3：多文件逐字稿合并（完成）
+- [x] 每个文件单独说话人分离（`media_to_wav` concat 到同一时间轴后一次分离）
+- [x] 按上传顺序合并时间线，时间戳累计偏移（`file_manifest` 记录每段起止）
+- [x] 跨文件人名合并去重（`speaker_map` 统一映射，一次分离天然同一 speaker ID）
+- Commit：`3dd366e feat: group transcript by source file with segment_source_at`
 
 ## 任务 4：声纹匹配与回写（待办）
 - [ ] 从客户档案读已有声纹向量
