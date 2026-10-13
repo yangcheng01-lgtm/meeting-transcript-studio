@@ -17,6 +17,7 @@ config/*.json
 
 # Runtime projects, uploads, generated audio and model data
 data/projects/
+data/customers.json
 公开测试数据/**/*.{wav,mp3,m4a,mp4,mov,avi,mkv,tar,gz}
 公开测试数据/**/*.tar.gz
 speaker_previews/
