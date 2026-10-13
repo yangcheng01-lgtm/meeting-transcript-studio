@@ -305,6 +305,8 @@ function renderFileDropZone() {
 setupFileDropZone();
 
 async function createFromPath() {
+  const customerId = $("#customerSelect")?.value || "";
+  const newCustomer = $("#newCustomerInput")?.value.trim() || "";
   const title = $("#titleInput")?.value.trim() || "";
   const youtubeUrl = $("#youtubeUrlInput")?.value.trim() || "";
   const clipStart = $("#youtubeClipStartInput")?.value.trim() || "0";
@@ -318,7 +320,7 @@ async function createFromPath() {
   if (youtubeUrl) {
     project = await api("/api/projects/youtube", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url: youtubeUrl, title, expected_speakers: expectedSpeakers, glossary, clip_start: clipStart, clip_duration: clipDuration})});
   } else if (files.length) {
-    const form = new FormData(); form.append("title", title); form.append("expected_speakers", expectedSpeakers); form.append("glossary", glossary);
+    const form = new FormData(); form.append("title", title); form.append("customer_id", customerId); form.append("new_customer", newCustomer); form.append("expected_speakers", expectedSpeakers); form.append("glossary", glossary);
     files.forEach((file) => form.append("file", file, file.name));
     project = await api("/api/projects/upload", { method: "POST", body: form });
   } else {
@@ -331,7 +333,11 @@ function saveSpeakers() {
   const map = structuredClone(state.project.speaker_map || {});
   document.querySelectorAll("#speakerList input").forEach((input) => { map[input.dataset.speaker][input.dataset.field] = input.value.trim(); });
   api(`/api/projects/${state.project.id}/speakers`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({speaker_map:map})})
-    .then((project) => {state.project=project;renderProject();toast("人物标记已确认。");}).catch((e)=>toast(e.message,true));
+    .then((project) => {
+      state.project=project;renderProject();
+      const customer = project.customer_id ? api(`/api/projects/${project.id}/save-speakers-to-customer`, {method:"POST"}) : Promise.resolve({saved:[]});
+      return customer.then((result) => toast(result.saved?.length ? `人物标记已确认，并写入客户档案：${result.saved.join("、")}` : "人物标记已确认。"));
+    }).catch((e)=>toast(e.message,true));
 }
 
 function collectTranscript() {
@@ -354,8 +360,20 @@ async function importResult(kind) {
 
 async function loadDemo() { try { state.project = await api("/api/projects/demo", {method:"POST"}); renderProject(); toast("已打开“新录音 8”示例。") } catch(e){toast(e.message,true)} }
 
+async function loadCustomerOptions() {
+  try {
+    const customers = await api("/api/customers");
+    const select = $("#customerSelect");
+    if (!select) return;
+    select.innerHTML = `<option value="">＋ 新建客户</option>` + customers.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("");
+    select.value = state.project?.customer_id || "";
+  } catch (_) {}
+}
+loadCustomerOptions();
+
 async function openProjectDialog() {
   try {
+    await loadCustomerOptions();
     const projects = await api("/api/projects");
     const box = $("#existingProjects");
     if (box) {

@@ -29,6 +29,8 @@ from typing import Any
 from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
+import customers
+
 APP_DIR = Path(__file__).resolve().parent
 WORKSPACE = Path(os.environ.get("MEETING_WORKSPACE", APP_DIR.parent))
 DATA_ROOT = Path(os.environ.get("MEETING_DATA_ROOT", str(APP_DIR))).expanduser()
@@ -1149,6 +1151,57 @@ def index():
     return render_template("index.html")
 
 
+@app.get("/api/customers")
+def list_customers():
+    """列出客户档案，供导入时选择。"""
+    return jsonify(customers.list_customers())
+
+
+@app.post("/api/customers")
+def create_customer():
+    try:
+        payload = request.get_json(force=True)
+        customer = customers.create_customer(payload.get("name"))
+        return jsonify(customer), 201
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.put("/api/projects/<project_id>/customer")
+def update_project_customer(project_id: str):
+    """修改项目归属客户；仅更新项目元数据。"""
+    try:
+        payload = request.get_json(silent=True) or {}
+        customer = customers.ensure_customer(payload.get("customer_id"), payload.get("new_customer"))
+        project = load_project(project_id)
+        project["customer_id"] = customer["id"]
+        project["customer_name"] = customer["name"]
+        save_project(project)
+        return jsonify(public_project(project))
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.post("/api/projects/<project_id>/save-speakers-to-customer")
+def save_speakers_to_customer(project_id: str):
+    """把项目里已确认的说话人写回客户档案。"""
+    try:
+        project = load_project(project_id)
+        if not project.get("customer_id"):
+            raise ValueError("项目还没有关联客户，请先在导入时选择或新建客户。")
+        saved = []
+        for speaker, info in project.get("speaker_map", {}).items():
+            name = str(info.get("name", "")).strip()
+            if not name or name == speaker:
+                continue
+            customers.add_person(project["customer_id"], name, str(info.get("role", "")))
+            saved.append(name)
+        if not saved:
+            raise ValueError("没有可归档的已命名发言人。")
+        return jsonify(saved=saved, customer_id=project["customer_id"])
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
+
 @app.get("/api/projects")
 def list_projects():
     projects = []
@@ -1209,7 +1262,13 @@ def upload_project():
     files = [file for file in request.files.getlist("file") if file and file.filename]
     if not files:
         return jsonify(error="请选择一个或多个音频/视频文件。"), 400
-    title = str(request.form.get("title", "")).strip() or (Path(files[0].filename).stem if len(files) == 1 else "多文件会议")
+    try:
+        customer = customers.ensure_customer(request.form.get("customer_id"), request.form.get("new_customer"))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    filenames = [Path(file.filename).name for file in files]
+    default_title = customers.default_thread_title(customer["name"], filenames)
+    title = str(request.form.get("title", "")).strip() or default_title
     project_id = uuid.uuid4().hex[:10]
     folder = project_dir(project_id)
     folder.mkdir(parents=True, exist_ok=True)
@@ -1224,6 +1283,7 @@ def upload_project():
     glossary = normalize_glossary(request.form.get("glossary", ""))
     project = {
         "id": project_id, "title": title, "created_at": now(), "updated_at": now(),
+        "customer_id": customer["id"], "customer_name": customer["name"],
         "media_path": str(sources[0]), "media_paths": [str(source) for source in sources],
         "source_count": len(sources), "audio_path": "", "file_manifest": [],
         "diarization_segments": [], "asr_segments": [], "asr_raw_text": "",

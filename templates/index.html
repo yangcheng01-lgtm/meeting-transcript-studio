@@ -145,9 +145,10 @@ C035
       <button class="dialog-close" value="cancel" aria-label="关闭">×</button>
       <div class="eyebrow">NEW LOCAL PROJECT</div>
       <h2>导入你的录音</h2>
-      <p>优先填写本机绝对路径，文件不会被复制；也可以选择文件上传到本地项目目录。</p>
-      <label>项目名称<input id="titleInput" placeholder="例如：越南市场访谈"></label>
-      <div class="dialog-hint">填 YouTube 链接后，不需要填写本机路径或选择文件；工具会下载音频到本地项目。演示或测试可只截取 5–600 秒。</div>
+      <p>选择或新建客户后，一次导入 1 个或多个音频/视频；文件会按顺序合并成一个会议时间轴。</p>
+      <label>客户<select id="customerSelect"></select></label>
+      <label>新客户名称（选择“＋ 新建客户”时填写）<input id="newCustomerInput" placeholder="例如：Voi"></label>
+      <label>项目名称（可选，默认自动生成）<input id="titleInput" placeholder="例如：Voi 20260112 商业洽谈"></label>
       <div class="youtube-clip-row"><label>链接起点（秒）<input id="youtubeClipStartInput" type="number" min="0" step="1" placeholder="0"></label><label>截取时长（秒，可选）<input id="youtubeClipDurationInput" type="number" min="5" max="600" step="1" placeholder="例如 60"></label></div>
       <label>已知说话人数（可选）<input id="expectedSpeakersInput" type="number" min="1" max="20" placeholder="不知道就留空；两人对话可填 2"></label>
       <label>业务术语 / 专有名词（可选）<textarea id="projectGlossaryInput" rows="4" placeholder="每行一个，例如型号、人名、地名、品牌、行业术语"></textarea></label>
