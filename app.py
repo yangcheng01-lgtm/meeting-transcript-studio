@@ -114,8 +114,41 @@ def save_project(project: dict[str, Any]) -> None:
 
 def public_project(project: dict[str, Any]) -> dict[str, Any]:
     """返回给浏览器的项目数据；不会包含凭证。"""
-    return project
+    payload = dict(project)
+    payload["file_manifest"] = segment_source_for_frontend(project)
+    return payload
 
+def segment_source_for_frontend(project: dict[str, Any]) -> list[dict[str, Any]]:
+    """供前端把逐字稿按源文件分组；时间戳 -> 源文件映射。"""
+    manifest = project.get("file_manifest") or []
+    return [
+        {
+            "index": int(item.get("index", 0)),
+            "filename": str(item.get("filename", "")),
+            "start": float(item.get("start", 0)),
+            "end": float(item.get("end", 0)),
+            "duration": float(item.get("duration", 0)),
+        }
+        for item in manifest if isinstance(item, dict)
+    ]
+
+
+def segment_source_at(manifest: list[dict], timestamp: float) -> dict[str, Any] | None:
+    """按合并时间轴查找某时间点属于哪个源文件；返回该文件信息和相对偏移。"""
+    if not isinstance(manifest, list):
+        return None
+    for item in manifest:
+        try:
+            start, end = float(item.get("start", 0)), float(item.get("end", 0))
+        except (TypeError, ValueError):
+            continue
+        if start <= timestamp < end:
+            return {
+                "filename": str(item.get("filename", "")),
+                "index": int(item.get("index", 0)),
+                "relative_start": round(timestamp - start, 3),
+            }
+    return None
 
 def fmt_timestamp(seconds: float) -> str:
     seconds = max(0.0, seconds)

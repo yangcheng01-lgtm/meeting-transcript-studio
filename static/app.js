@@ -149,6 +149,15 @@ function renderTimeline() {
     return `<div class="timeline-bar" title="${escapeHtml(speakerLabel(item.speaker))} · ${time(item.start)} – ${time(item.end)}" style="left:${left}%;width:${width}%;background:${escapeHtml(info.color || "#777")}"></div>`;
   }).join("");
 }
+function segmentSourceOf(timestamp) {
+  const manifest = state.project?.file_manifest || [];
+  for (const item of manifest) {
+    if (timestamp >= item.start && timestamp < item.end) {
+      return { filename: item.filename, relative: timestamp - item.start };
+    }
+  }
+  return null;
+}
 
 function renderTranscript() {
   const list = $("#transcriptList");
@@ -156,15 +165,26 @@ function renderTranscript() {
   $("#transcriptHeading").textContent = segments.length ? `已对齐 ${segments.length} 个文字片段` : "等待带时间戳的 ASR";
   $("#transcriptNotice").classList.toggle("hidden", Boolean(segments.length));
   if (!segments.length) {
-    list.innerHTML = `<div class="notice">点击“开始识别”后，工具会自动生成带 Speaker 的逐字稿。完成后可在这里校对文本。</div>`;
+    list.innerHTML = `<div class="notice">点击"开始识别"后，工具会自动生成带 Speaker 的逐字稿。完成后可在这里校对文本。</div>`;
     return;
   }
-  list.innerHTML = segments.map((item, index) => `
+  let lastFilename = null;
+  const rows = [];
+  segments.forEach((item, index) => {
+    const source = segmentSourceOf(item.start);
+    const filename = source?.filename || null;
+    if (filename && filename !== lastFilename) {
+      rows.push(`<div class="transcript-file-divider"><strong>${escapeHtml(filename)}</strong><small>源文件 ${index + 1}</small></div>`);
+      lastFilename = filename;
+    }
+    rows.push(`
     <article class="transcript-row" data-index="${index}">
       <div class="time-label">${time(item.start)}<br>↓ ${time(item.end)}<br><small>${escapeHtml(item.timing_quality || "segment")}</small></div>
       <select class="speaker-select" data-field="speaker">${selectedSpeakers(item.speaker)}</select>
       <textarea class="segment-text" data-field="text" aria-label="第 ${index + 1} 段文字">${escapeHtml(item.text)}</textarea>
-    </article>`).join("");
+    </article>`);
+  });
+  list.innerHTML = rows.join("");
 }
 
 async function refreshProject() {

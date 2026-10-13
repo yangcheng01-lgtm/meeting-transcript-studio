@@ -50,3 +50,17 @@ dialog{border:0;padding:0;background:transparent;max-width:min(620px,calc(100vw 
 .file-drop-zone span{font-size:13px;color:var(--muted)}
 .file-drop-zone small{font:500 10px "DM Mono",monospace;color:var(--orange)}
 .file-drop-zone.has-files{border-style:solid;border-color:#35c46f;background:#f1fff5}
+
+/* transcript file divider for multi-file meetings */
+.transcript-file-divider {
+  margin-top: 18px;
+  padding: 8px 14px;
+  background: rgba(224, 90, 51, 0.08);
+  border-left: 3px solid var(--accent, #e05a33);
+  font-size: 13px;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+.transcript-file-divider strong { color: var(--ink, #221f1c); }
+.transcript-file-divider small { color: #7a746d; }
