@@ -23,11 +23,11 @@
 - [x] 跨文件人名合并去重（`speaker_map` 统一映射，一次分离天然同一 speaker ID）
 - Commit：`3dd366e feat: group transcript by source file with segment_source_at`
 
-## 任务 4：声纹匹配与回写（待办）
-- [ ] 从客户档案读已有声纹向量
-- [ ] 相似度 >=0.80 自动确认，0.65-0.80 人工确认，<0.65 新建占位
-- [ ] 用户确认后把新声纹写入档案
-- 说明：pyannote 3.1 需要 embedding API，MVP 可先做阈值框架和 UI 占位
+## 任务 4：声纹匹配与回写（完成）
+- [x] 从客户档案读已有声纹向量（`customers.read_customers` + `voiceprints.match_speaker`）
+- [x] 相似度 >=0.80 自动确认，0.65-0.80 人工确认，<0.65 新建占位
+- [x] 用户确认后把新声纹写入档案（`voiceprint-save` API + 确认人名时自动触发）
+- Commit：`2d033d6` / `4348a66` / `4bd6c02` / `54e5a2e`
 
 ## 任务 5：纪要生成改造（待办）
 - [ ] 确认 `transcript_for_agent` 用合并后逐字稿做唯一输入
