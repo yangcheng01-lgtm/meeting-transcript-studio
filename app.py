@@ -30,6 +30,7 @@ from flask import Flask, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
 import customers
+import voiceprints
 
 APP_DIR = Path(__file__).resolve().parent
 WORKSPACE = Path(os.environ.get("MEETING_WORKSPACE", APP_DIR.parent))
@@ -1625,6 +1626,90 @@ def get_job(job_id: str):
         job = _jobs.get(job_id)
     return jsonify(job) if job else (jsonify(error="任务不存在"), 404)
 
+
+def _extract_embedding_with_venv(audio_path: Path) -> list[float]:
+    """Run pyannote embedding extractor with D:\voiceid31 Python. Returns 256-dim vector."""
+    env = os.environ.copy()
+    env.setdefault("PYANNOTE_CACHE", str(DATA_ROOT / "model-cache" / "torch" / "pyannote"))
+    env.setdefault("HF_HUB_OFFLINE", "1")
+    env["PYTHONUTF8"] = "1"
+    process = subprocess.run(
+        [str(VOICEID_PYTHON), str(APP_DIR / "scripts" / "extract_embedding.py"), str(audio_path), "--offline"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
+    )
+    if process.returncode != 0:
+        raise RuntimeError(process.stderr[-1200:] or "声纹提取失败")
+    payload = json.loads(process.stdout.strip())
+    return [float(x) for x in payload.get("vector", [])]
+
+
+def _speaker_reference_clip(project_id: str, speaker: str) -> Path:
+    """Return a short reference clip for a speaker, generating it once if needed."""
+    project = load_project(project_id)
+    if speaker not in project.get("speaker_map", {}):
+        raise FileNotFoundError("Speaker 不存在")
+    start, duration = speaker_preview_window(project, speaker)
+    audio = media_to_wav(project)
+    previews = project_dir(project_id) / "speaker_previews"
+    previews.mkdir(exist_ok=True)
+    clip = previews / f"{secure_filename(speaker)}_{start:.3f}_{duration:.3f}.wav"
+    if not clip.is_file():
+        if not FFMPEG.is_file():
+            raise FileNotFoundError(f"未找到 ffmpeg：{FFMPEG}")
+        process = subprocess.run(
+            [str(FFMPEG), "-y", "-ss", str(start), "-t", str(duration), "-i", str(audio),
+             "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", str(clip)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if process.returncode != 0:
+            raise RuntimeError(process.stderr[-1200:])
+    return clip
+
+
+@app.post("/api/projects/<project_id>/voiceprint-match/<speaker>")
+def match_speaker_voiceprint(project_id: str, speaker: str):
+    """对比该说话人代表片段和客户档案声纹；返回 decision/name/similarity。"""
+    try:
+        project = load_project(project_id)
+        customer_id = project.get("customer_id")
+        if not customer_id:
+            return jsonify(error="项目还没有关联客户。"), 400
+        customer = customers.find_customer(str(customer_id))
+        if not customer:
+            return jsonify(error="客户档案不存在。"), 404
+        clip = _speaker_reference_clip(project_id, speaker)
+        vector = _extract_embedding_with_venv(clip)
+        result = voiceprints.match_speaker(vector, customer.get("people", []))
+        result["customer_id"] = customer_id
+        result["speaker"] = speaker
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.post("/api/projects/<project_id>/voiceprint-save/<speaker>")
+def save_speaker_voiceprint(project_id: str, speaker: str):
+    """把该说话人代表片段的声纹写入客户档案。"""
+    try:
+        payload = request.get_json(silent=True) or {}
+        project = load_project(project_id)
+        customer_id = project.get("customer_id")
+        if not customer_id:
+            return jsonify(error="项目还没有关联客户。"), 400
+        name = str(payload.get("name", "")).strip()
+        role = str(payload.get("role", "")).strip()
+        if not name:
+            return jsonify(error="请先填写姓名，再保存声纹。"), 400
+        clip = _speaker_reference_clip(project_id, speaker)
+        vector = _extract_embedding_with_venv(clip)
+        customer_payload = customers.read_customers()
+        person_id = voiceprints.ensure_person_with_voiceprint(customer_payload, str(customer_id), name, role, vector)
+        if not person_id:
+            return jsonify(error="客户档案不存在。"), 404
+        customers.save_customers(customer_payload)
+        return jsonify(saved=True, person_id=person_id, dimension=len(vector))
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
 
 @app.put("/api/projects/<project_id>/speakers")
 def update_speakers(project_id: str):
