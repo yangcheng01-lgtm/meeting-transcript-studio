@@ -118,7 +118,7 @@ function renderSpeakers() {
         <label>姓名<input data-speaker="${escapeHtml(id)}" data-field="name" value="${escapeHtml(info.name || id)}"></label>
         <label>角色<input data-speaker="${escapeHtml(id)}" data-field="role" value="${escapeHtml(info.role || "")}" placeholder="例如：采访者"></label>
         <p class="speaker-excerpt">“${escapeHtml(stats.excerpt)}”</p>
-        <div class="speaker-tools"><small>${escapeHtml(cue)}</small>${stats.longest ? `<button class="speaker-preview-btn" data-preview-speaker="${escapeHtml(id)}">试听代表片段</button>` : ""}</div>
+        <div class="speaker-tools"><small>${escapeHtml(cue)}</small>${stats.longest ? `<button class="speaker-preview-btn" data-preview-speaker="${escapeHtml(id)}">试听代表片段</button>` : ""}<button class="speaker-preview-btn" data-match-speaker="${escapeHtml(id)}">匹配客户档案</button><small class="voiceprint-status" data-voiceprint-status="${escapeHtml(id)}"></small></div>
       </article>`;
   }).join("") || `<p class="panel-note">还没有发言人。请先运行识别或导入发言人时间轴。</p>`;
   list.querySelectorAll("[data-preview-speaker]").forEach((button) => button.addEventListener("click", () => playSpeakerPreview(button.dataset.previewSpeaker)));
@@ -137,6 +137,25 @@ async function playSpeakerPreview(speaker) {
 }
 
 
+
+async function matchSpeakerVoiceprint(speaker, button) {
+  const status = document.querySelector(`[data-voiceprint-status="${speaker}"]`);
+  if (status) status.textContent = "匹配中…";
+  try {
+    const result = await api(`/api/projects/${state.project.id}/voiceprint-match/${encodeURIComponent(speaker)}`, {method:"POST"});
+    if (status) {
+      const label = result.decision === "auto" ? "自动" : result.decision === "review" ? "待确认" : "无匹配";
+      status.textContent = `${label} · ${result.name || "—"} · ${(result.similarity * 100).toFixed(1)}%`;
+      if (result.decision === "auto" || result.decision === "review") {
+        const input = document.querySelector(`#speakerList input[data-speaker="${speaker}"][data-field="name"]`);
+        if (input && !input.value.trim()) input.value = result.name;
+      }
+    }
+  } catch (error) {
+    if (status) status.textContent = "匹配失败";
+    toast(error.message, true);
+  }
+}
 function renderTimeline() {
   const timeline = $("#timeline");
   const segments = state.project.diarization_segments || [];
@@ -353,10 +372,19 @@ function saveSpeakers() {
   const map = structuredClone(state.project.speaker_map || {});
   document.querySelectorAll("#speakerList input").forEach((input) => { map[input.dataset.speaker][input.dataset.field] = input.value.trim(); });
   api(`/api/projects/${state.project.id}/speakers`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({speaker_map:map})})
-    .then((project) => {
+    .then(async (project) => {
       state.project=project;renderProject();
-      const customer = project.customer_id ? api(`/api/projects/${project.id}/save-speakers-to-customer`, {method:"POST"}) : Promise.resolve({saved:[]});
-      return customer.then((result) => toast(result.saved?.length ? `人物标记已确认，并写入客户档案：${result.saved.join("、")}` : "人物标记已确认。"));
+      if (!project.customer_id) { toast("人物标记已确认（未关联客户，声纹不入档）。"); return; }
+      const speakers = Object.entries(map).filter(([id, info]) => info.name && info.name !== id && !/^SPEAKER[_\s-]*\d+$/i.test(info.name)).map(([id]) => id);
+      const saved = [];
+      for (const speaker of speakers) {
+        try {
+          const info = map[speaker];
+          await api(`/api/projects/${project.id}/voiceprint-save/${encodeURIComponent(speaker)}`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name: info.name, role: info.role})});
+          saved.push(info.name);
+        } catch (error) { console.warn("声纹保存失败", speaker, error); }
+      }
+      toast(saved.length ? `人物标记已确认，并写入客户档案：${saved.join("、")}` : "人物标记已确认（声纹未保存）。");
     }).catch((e)=>toast(e.message,true));
 }
 
