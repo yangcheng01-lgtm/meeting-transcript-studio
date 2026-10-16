@@ -5,8 +5,8 @@ param(
 # Local data can live outside the source repository, for example on D:.
 # The migration script creates this directory and the setting is process-local.
 if ([string]::IsNullOrWhiteSpace($env:MEETING_DATA_ROOT)) {
-    if (Test-Path 'D:\多听工作台\data\projects') {
-        $env:MEETING_DATA_ROOT = 'D:\多听工作台'
+    if (Test-Path 'D:\客户声音\data\projects') {
+        $env:MEETING_DATA_ROOT = 'D:\客户声音'
     } else {
         $env:MEETING_DATA_ROOT = $PSScriptRoot
     }

@@ -1,4 +1,4 @@
-# 多听工作台
+# 客户声音
 
 本项目将音频/视频转成带 Speaker、姓名、角色、时间戳的逐字稿，并可调用公司兼容 OpenAI API 的大模型生成会议总结纪要。
 
@@ -40,11 +40,11 @@ python app.py
 运行时项目、上传的音频/视频、切片和导出结果可以放在源代码目录之外，避免占满 C 盘：
 
 ```powershell
-$env:MEETING_DATA_ROOT = "D:\多听工作台"
-$env:MEETING_PROJECTS_DIR = "D:\多听工作台\data\projects"
+$env:MEETING_DATA_ROOT = "D:\客户声音"
+$env:MEETING_PROJECTS_DIR = "D:\客户声音\data\projects"
 ```
 
-`start_studio.ps1` 会在检测到 `D:\多听工作台\data\projects` 后自动使用该目录；未迁移时会回退到仓库内的 `data\projects`。模型缓存也会优先使用 `D:\多听工作台\model-cache`；pyannote 使用 `model-cache\torch\pyannote`。
+`start_studio.ps1` 会在检测到 `D:\客户声音\data\projects` 后自动使用该目录；未迁移时会回退到仓库内的 `data\projects`。模型缓存也会优先使用 `D:\客户声音\model-cache`；pyannote 使用 `model-cache\torch\pyannote`。
 
 首次迁移现有本地项目和材料时，在停止工作台后执行：
 

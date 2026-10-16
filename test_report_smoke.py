@@ -3,16 +3,16 @@ from __future__ import annotations
 import os
 import unittest
 
-os.environ["MEETING_DATA_ROOT"] = "D:\\多听工作台"
-os.environ["MEETING_PROJECTS_DIR"] = "D:\\多听工作台\\data\\projects"
+os.environ["MEETING_DATA_ROOT"] = "D:\\客户声音"
+os.environ["MEETING_PROJECTS_DIR"] = "D:\\客户声音\\data\\projects"
 
 from app import llm_report_prompt, load_project
 
 
 class SmokeReportPromptTests(unittest.TestCase):
     def test_report_prompt_ali_meeting(self) -> None:
-        os.environ["MEETING_DATA_ROOT"] = "D:\\多听工作台"
-        os.environ["MEETING_PROJECTS_DIR"] = "D:\\多听工作台\\data\\projects"
+        os.environ["MEETING_DATA_ROOT"] = "D:\\客户声音"
+        os.environ["MEETING_PROJECTS_DIR"] = "D:\\客户声音\\data\\projects"
         # reload project path lazily by setting module-level PROJECTS_DIR
         import app as app_module
         from pathlib import Path

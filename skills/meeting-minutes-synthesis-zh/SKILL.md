@@ -220,7 +220,7 @@ YYYY-MM-DD__meeting-minutes__<topic>.md
 
 ## 八、适用于本项目的特殊规则
 
-对于“多听工作台”产出的内容：
+对于“客户声音”产出的内容：
 
 - `pyannote` 的 Speaker 时间线是说话人时间边界来源；
 - qwen3-asr 是中文/多语种文字来源；

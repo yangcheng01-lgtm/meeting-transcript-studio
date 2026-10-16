@@ -9,8 +9,8 @@ from app import render_exports
 
 class ExportHeaderTests(unittest.TestCase):
     def test_md_header_has_customer_and_manifest(self) -> None:
-        os.environ["MEETING_DATA_ROOT"] = "D:\\多听工作台"
-        os.environ["MEETING_PROJECTS_DIR"] = "D:\\多听工作台\\data\\projects"
+        os.environ["MEETING_DATA_ROOT"] = "D:\\客户声音"
+        os.environ["MEETING_PROJECTS_DIR"] = "D:\\客户声音\\data\\projects"
         import app as app_module
         app_module.PROJECTS_DIR = Path(os.environ["MEETING_PROJECTS_DIR"])
         project = {

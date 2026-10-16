@@ -1,4 +1,4 @@
-"""Migrate local 多听工作台 data and source materials to D:.
+"""Migrate local 客户声音 data and source materials to D:.
 
 This script moves only the known runtime/source directories, rewrites absolute
 paths inside project.json, and writes a local manifest outside the Git repo.
@@ -17,7 +17,7 @@ from typing import Any
 APP_DIR = Path(__file__).resolve().parents[1]
 DOCUMENTS_ROOT = APP_DIR.parent
 USER_HOME = Path.home()
-DEFAULT_DATA_ROOT = Path(r"D:\多听工作台")
+DEFAULT_DATA_ROOT = Path(r"D:\客户声音")
 
 
 def path_key(path: Path) -> str:

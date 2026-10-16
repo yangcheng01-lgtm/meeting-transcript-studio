@@ -983,7 +983,7 @@ def llm_report_prompt(project: dict[str, Any], skill_id: str, source_text: str |
     metadata, skill_path = resolve_summary_skill(skill_id)
     skill = skill_path.read_text(encoding="utf-8")
     transcript = source_text if source_text is not None else transcript_for_agent(project)
-    system = f"""你是多听工作台的音视频总结 Agent。请严格遵守下面的 Skill 规则。
+    system = f"""你是客户声音的音视频总结 Agent。请严格遵守下面的 Skill 规则。
 
 {skill}
 
