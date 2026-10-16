@@ -31,6 +31,7 @@ from werkzeug.utils import secure_filename
 
 import customers
 import voiceprints
+import feishu_minutes
 
 APP_DIR = Path(__file__).resolve().parent
 WORKSPACE = Path(os.environ.get("MEETING_WORKSPACE", APP_DIR.parent))
@@ -1795,6 +1796,89 @@ def save_transcript(project_id: str):
         project["transcript_segments"] = sorted(clean, key=lambda x: (x["start"], x["end"]))
         save_project(project)
         return jsonify(public_project(project))
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.post("/api/projects/<project_id>/process/feishu-minutes")
+def start_feishu_minutes_flow(project_id: str):
+    """B流程：把项目音频上传到飞书妙记，拉回逐字稿，填充项目。
+
+    需要项目已有 audio_path 或 media_path，且 lark-cli 已认证。
+    """
+    try:
+        project = load_project(project_id)
+        audio = Path(project.get("audio_path", ""))
+        if not audio.is_file():
+            audio = media_to_wav(project)
+        if not audio.is_file():
+            raise FileNotFoundError("项目没有可用的音频文件，请先导入音频或视频。")
+        job_id = create_job(project_id, "feishu_minutes")
+
+        def worker() -> None:
+            try:
+                update_job(job_id, status="running", progress=10, message="上传音频到飞书云空间…")
+                file_token = feishu_minutes.upload_to_drive(str(audio))
+                update_job(job_id, progress=30, message="创建飞书妙记…")
+                minute_token, minute_url = feishu_minutes.create_minute(file_token)
+                update_job(job_id, progress=40, message="等待妙记转写完成…")
+                detail = feishu_minutes.fetch_minute_detail(minute_token, wait_ready=True)
+                update_job(job_id, progress=80, message="解析逐字稿…")
+                transcript_text = feishu_minutes.read_transcript(detail.get("transcript_file", ""))
+                segments = feishu_minutes.parse_feishu_transcript(transcript_text)
+                if not segments:
+                    raise RuntimeError("飞书妙记未返回可用逐字稿。")
+                speaker_map = feishu_minutes.parse_minute_speakers(transcript_text)
+                project = load_project(project_id)
+                project["transcript_segments"] = segments
+                project["speaker_map"] = speaker_map
+                project["asr_source"] = "feishu_minutes"
+                project["asr_timing_quality"] = "feishu_minute"
+                project["feishu_minute_token"] = minute_token
+                project["feishu_minute_url"] = minute_url
+                artifacts = detail.get("artifacts", {})
+                if artifacts.get("summary"):
+                    project["feishu_summary"] = artifacts["summary"]
+                if artifacts.get("todos"):
+                    project["feishu_todos"] = artifacts["todos"]
+                if artifacts.get("chapters"):
+                    project["feishu_chapters"] = artifacts["chapters"]
+                if artifacts.get("keywords"):
+                    project["feishu_keywords"] = artifacts["keywords"]
+                save_project(project)
+                update_job(job_id, status="done", progress=100, message=f"飞书妙记已拉回逐字稿（{len(segments)} 段）。妙记链接：{minute_url}", result={"minute_url": minute_url, "segments": len(segments)}, finished_at=now())
+            except Exception as exc:
+                job_error(job_id, exc)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return jsonify(_jobs[job_id]), 202
+    except Exception as exc:
+        return jsonify(error=str(exc)), 400
+
+
+@app.post("/api/projects/<project_id>/push-report-to-feishu")
+def push_report_to_feishu(project_id: str):
+    """把项目已有的总结报告推送到飞书云文档。"""
+    try:
+        payload = request.get_json(silent=True) or {}
+        skill_id = str(payload.get("skill") or "")
+        project = load_project(project_id)
+        report_path = ""
+        if skill_id and project.get("reports", {}).get(skill_id, {}).get("path"):
+            report_path = project["reports"][skill_id]["path"]
+        elif project.get("minutes_path"):
+            report_path = project["minutes_path"]
+        elif project.get("latest_report_path"):
+            report_path = project["latest_report_path"]
+        if not report_path or not Path(report_path).is_file():
+            raise FileNotFoundError("项目还没有总结报告，请先生成。")
+        doc_name = str(payload.get("doc_name") or f"{project.get('title', project_id)} - 纪要")
+        folder_token = str(payload.get("folder_token") or "").strip() or None
+        result = feishu_minutes.push_report_to_feishu_doc(report_path, folder_token, doc_name)
+        project["feishu_report_url"] = result.get("url", "")
+        project["feishu_report_token"] = result.get("file_token", "")
+        save_project(project)
+        return jsonify({"url": result.get("url", ""), "file_token": result.get("file_token", ""), "project": public_project(project)})
     except Exception as exc:
         return jsonify(error=str(exc)), 400
 
