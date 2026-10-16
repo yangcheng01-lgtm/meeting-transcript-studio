@@ -11,6 +11,12 @@ from app import llm_report_prompt, load_project
 
 class SmokeReportPromptTests(unittest.TestCase):
     def test_report_prompt_ali_meeting(self) -> None:
+        os.environ["MEETING_DATA_ROOT"] = "D:\\多听工作台"
+        os.environ["MEETING_PROJECTS_DIR"] = "D:\\多听工作台\\data\\projects"
+        # reload project path lazily by setting module-level PROJECTS_DIR
+        import app as app_module
+        from pathlib import Path
+        app_module.PROJECTS_DIR = Path(os.environ["MEETING_PROJECTS_DIR"])
         project = load_project("257bf3c3a6")
         system, user, metadata = llm_report_prompt(project, "meeting-minutes-synthesis-zh")
         self.assertGreater(len(system), 100)
