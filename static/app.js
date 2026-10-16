@@ -494,3 +494,5 @@ $("#simpleExportBtn").onclick = exportTranscript;
 loadModelSettings();
 loadSummarySkills();
 api("/api/projects").then((projects)=>{ if(projects.length){ state.project={id:projects[0].id}; refreshProject(); } }).catch(()=>{});
+$("#feishuMinutesBtn").onclick = async () => { try{const job=await api(`/api/projects/${state.project.id}/process/feishu-minutes`,{method:"POST"});toast("飞书妙记：上传中，请稍候…");jobStatus(job)}catch(e){toast(e.message,true)} };
+$("#pushFeishuBtn").onclick = async () => { $("#resultExportMenu").classList.add("hidden"); try{const skill=$("#summarySkillSelect")?.value||"";const result=await api(`/api/projects/${state.project.id}/push-report-to-feishu`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({skill})});toast("已推送到飞书云文档。");if(result.url){window.open(result.url,"_blank")}}catch(e){toast(e.message,true)} };
