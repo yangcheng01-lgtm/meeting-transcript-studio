@@ -40,7 +40,8 @@
 - [x] 文件放在项目目录下（`exports/`）
 - Commit：`7b829b2 feat: add customer and file manifest to export header`
 
-## 任务 7：测试与验收（待办）
-- [ ] 单元测试：数据模型、合并、导出
-- [ ] 集成测试：主流程端到端
-- [ ] 用 Voi 资料做对照测试
+## 任务 7：测试与验收（完成）
+- [x] 单元测试：数据模型、合并、导出（test_customers / test_segment_source / test_export / test_voiceprints / test_report_context）
+- [x] 集成测试：主流程端到端（test_integration — 客户→多文件→命名→导出→声纹回写→纪要 prompt）
+- [x] 用 Voi 资料做对照测试（test_voi_comparison — D 盘真实 AliMeeting 项目）
+- Commit：本轮完成，45 tests passed
