@@ -1081,7 +1081,10 @@ def render_exports(project: dict[str, Any]) -> dict[str, Path]:
     export_dir.mkdir(exist_ok=True)
     slug = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", project.get("title", "逐字稿"))[:60] or "逐字稿"
     md_path, txt_path, srt_path = export_dir / f"{slug}_带署名逐字稿.md", export_dir / f"{slug}_带署名逐字稿.txt", export_dir / f"{slug}_带署名逐字稿.srt"
-    md = [f"# {project.get('title', '逐字稿')} — 带署名逐字稿", "", f"- 生成时间：{now()}", "- 注：说话人边界由本地 pyannote 分离生成；姓名/角色由人工确认。", ""]
+    customer_name = str(project.get("customer_name") or "未提供")
+    manifest = project.get("file_manifest") or []
+    file_summary = "；".join(f"文件{item.get('index', '')}：{item.get('filename', '')}" for item in manifest if isinstance(item, dict)) or "单文件"
+    md = [f"# {project.get('title', '逐字稿')} — 带署名逐字稿", "", f"- 客户：{customer_name}", f"- 来源：{file_summary}", f"- 生成时间：{now()}", "- 注：说话人边界由本地 pyannote 分离生成；姓名/角色由人工确认。", ""]
     txt, srt = [], []
     for index, item in enumerate(segments, 1):
         label = speaker_label(project, item["speaker"])
