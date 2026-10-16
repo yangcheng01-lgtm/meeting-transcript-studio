@@ -29,16 +29,16 @@
 - [x] 用户确认后把新声纹写入档案（`voiceprint-save` API + 确认人名时自动触发）
 - Commit：`2d033d6` / `4348a66` / `4bd6c02` / `54e5a2e`
 
-## 任务 5：纪要生成改造（待办）
-- [ ] 确认 `transcript_for_agent` 用合并后逐字稿做唯一输入
-- [ ] skill 输出包含行动项、风险、结论、精确数字
-- 说明：现有 `llm_report_prompt` 已有统一要求，需要对照 Voi 纪要做样本评测
+## 任务 5：纪要生成改造（完成）
+- [x] 确认 `transcript_for_agent` 用合并后逐字稿做唯一输入
+- [x] skill 输出包含行动项、风险、结论、精确数字（`llm_report_prompt` 统一要求 6/7）
+- Commit：`66165c7` / `48aaba6` / `ec63140`
 
-## 任务 6：导出（待办）
-- [ ] 逐字稿：MD/TXT/SRT
-- [ ] 纪要：MD
-- [ ] 文件放在项目目录下
-- 说明：`render_exports` 已有基础，需要加客户和 Thread 元信息
+## 任务 6：导出（完成）
+- [x] 逐字稿：MD/TXT/SRT
+- [x] 纪要：MD
+- [x] 文件放在项目目录下（`exports/`）
+- Commit：`7b829b2 feat: add customer and file manifest to export header`
 
 ## 任务 7：测试与验收（待办）
 - [ ] 单元测试：数据模型、合并、导出
