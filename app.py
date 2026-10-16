@@ -961,9 +961,21 @@ def split_transcript_for_llm(transcript: str, max_chars: int = LLM_CHUNK_CHAR_LI
 
 def report_context(project: dict[str, Any]) -> str:
     terms = glossary_prompt(project)
+    manifest = project.get("file_manifest") or []
+    boundaries = []
+    for item in manifest:
+        if not isinstance(item, dict):
+            continue
+        boundaries.append(
+            f"文件{item.get('index', '')}：{item.get('filename', '')}（{fmt_timestamp(float(item.get('start', 0)))} – {fmt_timestamp(float(item.get('end', 0)))}）"
+        )
+    boundary_text = "；".join(boundaries) if boundaries else "单文件项目"
+    customer = str(project.get("customer_name") or "未提供")
     return f"""项目标题：{project.get('title', '未命名项目')}
 项目编号：{project.get('project_code', project.get('id', '未提供'))}
+客户：{customer}
 来源文件：{json.dumps(project.get('media_paths') or [project.get('media_path')], ensure_ascii=False)}
+文件边界：{boundary_text}
 业务术语词表：{terms or '未提供'}"""
 
 
@@ -988,7 +1000,10 @@ def llm_report_prompt(project: dict[str, Any], skill_id: str, source_text: str |
 2. 严格区分原文事实、明确结论和分析推断。
 3. 未明确的负责人、日期、型号、结论不得臆造。
 4. 结合业务术语词表修正明显 ASR 同音错词；无法确认时标记“待复核”。
-5. 输出应可直接审改，并能追溯到原始时间戳。"""
+5. 按文件边界标注来源；多文件会议时在来源索引中注明每个片段属于哪个文件。
+6. 会议类输出必须包含：结论、关键事实与数据、讨论要点、已确认决策、行动项（负责人 + 截止日期）、风险与限制、开放问题。
+7. 访谈类输出必须包含：受访者陈述、痛点与诉求、机会与建议跟进、竞争信号、风险。
+8. 输出应可直接审改，并能追溯到原始时间戳。"""
     return system, user, metadata
 
 
